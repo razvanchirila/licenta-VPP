@@ -7,6 +7,7 @@ from datetime import date
 
 from vpp_core.controllers import RuleBasedController
 from vpp_core.metrics import compute_metrics
+from vpp_core.optimizer import LPController, MPCController
 from vpp_core.params import default_community
 from vpp_core.scenario import generate_scenario
 from vpp_core.simulator import simulate
@@ -25,7 +26,8 @@ def baseline_controllers() -> list[RuleBasedController]:
 COLUMNS = [
     ("controller", "{:<24}"), ("cost_lei", "{:>9.1f}"), ("import_kwh", "{:>9.1f}"),
     ("export_kwh", "{:>9.1f}"), ("p2p_kwh", "{:>8.1f}"), ("curtail_kwh", "{:>9.1f}"),
-    ("shed_kwh", "{:>8.1f}"), ("peak_import_kw", "{:>7.1f}"), ("scr", "{:>6.1%}"), ("ssr", "{:>6.1%}"),
+    ("shed_kwh", "{:>8.1f}"), ("soc_delta_kwh", "{:>7.1f}"), ("peak_import_kw", "{:>7.1f}"),
+    ("scr", "{:>6.1%}"), ("ssr", "{:>6.1%}"),
 ]
 
 
@@ -40,7 +42,8 @@ def main() -> None:
     for label, start in (("Vara (iunie)", date(2025, 6, 1)), ("Iarna (ianuarie)", date(2025, 1, 10))):
         sc = generate_scenario(community, start=start, n_days=7, dt_h=0.25, seed=42)
         print(f"\n{label}: 7 zile, 10 case, pas 15 min, seed 42")
-        print_table([compute_metrics(simulate(community, sc, c))["community"] for c in baseline_controllers()])
+        controllers = baseline_controllers() + [MPCController(), LPController()]
+        print_table([compute_metrics(simulate(community, sc, c))["community"] for c in controllers])
 
 
 if __name__ == "__main__":
