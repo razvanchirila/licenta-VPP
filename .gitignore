@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.hypothesis/
+
+# Date locale
+*.db
+*.sqlite
+*.log
+
+# Secrete
+.env
+.env.local
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Flutter: platforme nefolosite si fisiere generate
+/mobile/linux
+/mobile/macos
+mobile/windows/flutter/generated_plugin_registrant.*
+mobile/windows/flutter/generated_plugins.cmake

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ro">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPP Simulator - Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header (Fixed) -->
+      <header class="header">
+        <div class="header-content">
+          <h1>⚡ Virtual Power Plant Dashboard</h1>
+          <div class="header-info">
+            <div class="sim-time-display">
+              <span class="sim-time-icon">🕐</span>
+              <span class="sim-time-label">Sim Time:</span>
+              <span class="sim-time-value" id="headerSimTime">--:--</span>
+              <span class="sim-date-value" id="headerSimDate">----/--/--</span>
+            </div>
+            <div class="status-indicator">
+              <span class="status-dot" id="statusDot"></span>
+              <span id="statusText">Checking...</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Control Panel -->
+        <section class="card control-panel">
+          <h2>🎮 Control Panel</h2>
+          <div class="control-buttons">
+            <button class="btn btn-primary" onclick="initializeVPP()">
+              🚀 Initialize VPP
+            </button>
+            <button class="btn btn-warning" onclick="resetSimulation()">
+              🔄 Reset
+            </button>
+            <button
+              class="btn"
+              style="
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                color: white;
+              "
+              onclick="showPriceModal()"
+            >
+              💰 Prices
+            </button>
+          </div>
+
+          <div
+            style="
+              margin-top: 16px;
+              padding-top: 16px;
+              border-top: 1px solid #e5e7eb;
+            "
+          >
+            <h3 style="font-size: 14px; margin-bottom: 12px; color: #64748b">
+              ⏱️ Simulation Speed
+            </h3>
+            <div class="control-buttons">
+              <button
+                class="btn btn-sm speed-btn"
+                onclick="setSimSpeed(1)"
+                id="speed1"
+              >
+                1s
+              </button>
+              <button
+                class="btn btn-sm speed-btn"
+                onclick="setSimSpeed(2)"
+                id="speed2"
+              >
+                2s
+              </button>
+              <button
+                class="btn btn-sm speed-btn active"
+                onclick="setSimSpeed(5)"
+                id="speed5"
+              >
+                5s
+              </button>
+              <button
+                class="btn btn-sm speed-btn"
+                onclick="setSimSpeed(10)"
+                id="speed10"
+              >
+                10s
+              </button>
+              <button
+                class="btn btn-sm"
+                onclick="pauseSimulation()"
+                id="pauseBtn"
+              >
+                ⏸️ Pause
+              </button>
+              <button
+                class="btn btn-sm btn-success"
+                onclick="resumeSimulation()"
+                id="resumeBtn"
+                style="display: none"
+              >
+                ▶️ Resume
+              </button>
+            </div>
+            <p style="font-size: 11px; color: #94a3b8; margin-top: 8px">
+              Current: <span id="currentSpeed">5</span>s real = 10 min
+              simulation
+            </p>
+          </div>
+        </section>
+
+        <!-- VPP Overview -->
+        <section class="card vpp-overview">
+          <h2>🏘️ VPP Overview</h2>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">🏠</div>
+              <div class="stat-value" id="totalHouses">-</div>
+              <div class="stat-label">Total Houses</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">🔋</div>
+              <div class="stat-value" id="housesWithBattery">-</div>
+              <div class="stat-label">With Batteries</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">☀️</div>
+              <div class="stat-value" id="totalPvCapacity">-</div>
+              <div class="stat-label">Total PV (kW)</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">⚡</div>
+              <div class="stat-value" id="batteryCapacity">-</div>
+              <div class="stat-label">Battery Cap (kWh)</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- House Control -->
+        <section class="card house-control">
+          <h2>🏠 House Control</h2>
+          <div class="house-selector">
+            <label for="houseSelect">Select House:</label>
+            <select id="houseSelect" onchange="loadHouseDetails()">
+              <option value="">-- Select a house --</option>
+            </select>
+            <button class="btn btn-sm" onclick="loadHouses()">
+              🔄 Refresh
+            </button>
+          </div>
+          <div id="houseDetails" class="house-details">
+            <p class="placeholder">Select a house to view details</p>
+          </div>
+        </section>
+
+        <!-- Live VPP Stats -->
+        <section class="card charts-section">
+          <h2>📈 Live VPP Stats</h2>
+          <div id="liveStatsContainer">
+            <div class="live-stats-grid">
+              <div class="live-stat" style="border-color: #f59e0b">
+                <div class="live-stat-icon">☀️</div>
+                <div class="live-stat-value" id="livePvProd">0.00</div>
+                <div class="live-stat-label">PV Production (kW)</div>
+              </div>
+              <div class="live-stat" style="border-color: #ef4444">
+                <div class="live-stat-icon">⚡</div>
+                <div class="live-stat-value" id="liveTotalLoad">0.00</div>
+                <div class="live-stat-label">Total Load (kW)</div>
+              </div>
+              <div class="live-stat" style="border-color: #10b981">
+                <div class="live-stat-icon">📥</div>
+                <div class="live-stat-value" id="liveGridImport">0.00</div>
+                <div class="live-stat-label">Grid Import (kW)</div>
+              </div>
+              <div class="live-stat" style="border-color: #06b6d4">
+                <div class="live-stat-icon">📤</div>
+                <div class="live-stat-value" id="liveGridExport">0.00</div>
+                <div class="live-stat-label">Grid Export (kW)</div>
+              </div>
+              <div class="live-stat" style="border-color: #8b5cf6">
+                <div class="live-stat-icon">🔄</div>
+                <div class="live-stat-value" id="liveInternalTrade">0.00</div>
+                <div class="live-stat-label">Internal Trading (kW)</div>
+              </div>
+              <div class="live-stat" style="border-color: #ec4899">
+                <div class="live-stat-icon">🔋</div>
+                <div class="live-stat-value" id="liveAvgSoc">0.0</div>
+                <div class="live-stat-label">Avg Battery SOC (%)</div>
+              </div>
+            </div>
+            <div
+              id="neighborhoodState"
+              style="
+                margin-top: 16px;
+                padding: 12px;
+                background: #f8fafc;
+                border-radius: 8px;
+                text-align: center;
+              "
+            >
+              <span style="font-weight: 600">Neighborhood State:</span>
+              <span
+                id="neighborhoodStateValue"
+                style="margin-left: 8px; font-weight: 700"
+                >--</span
+              >
+              <span style="margin-left: 16px; color: #64748b">Price:</span>
+              <span id="currentPrice" style="font-weight: 600">--</span> lei/kWh
+            </div>
+          </div>
+        </section>
+
+        <!-- Configuration Settings -->
+        <section class="card config-section">
+          <h2>⚙️ Configuration Settings</h2>
+          <div class="config-content">
+            <div class="config-tabs">
+              <button
+                class="config-tab active"
+                onclick="showConfigTab('prices', this)"
+              >
+                💰 Prices
+              </button>
+              <button class="config-tab" onclick="showConfigTab('grid', this)">
+                🔌 Grid
+              </button>
+              <button
+                class="config-tab"
+                onclick="showConfigTab('battery', this)"
+              >
+                🔋 Battery
+              </button>
+              <button class="config-tab" onclick="showConfigTab('pv', this)">
+                ☀️ PV
+              </button>
+              <button
+                class="config-tab"
+                onclick="showConfigTab('trading', this)"
+              >
+                🔄 Trading
+              </button>
+            </div>
+
+            <div id="configTabContent" class="config-tab-content">
+              <p class="placeholder">Loading configuration...</p>
+            </div>
+
+            <div class="config-actions">
+              <button class="btn btn-success" onclick="saveConfig()">
+                💾 Save Configuration
+              </button>
+              <button class="btn btn-warning" onclick="resetConfig()">
+                🔄 Reset to Defaults
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <p>
+          VPP Simulator © 2025 | API:
+          <span id="apiUrl">http://localhost:8000</span>
+        </p>
+      </footer>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none">
+      <div class="spinner"></div>
+      <p id="loadingText">Loading...</p>
+    </div>
+
+    <!-- Edit Device Modal -->
+    <div id="editDeviceModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>✏️ Edit Device</h3>
+          <button class="modal-close" onclick="closeEditModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="editDeviceName">Device Name:</label>
+            <input
+              type="text"
+              id="editDeviceName"
+              class="form-input"
+              placeholder="e.g., Frigider"
+            />
+          </div>
+          <div class="form-group">
+            <label for="editDevicePower">Power (Watts):</label>
+            <input
+              type="number"
+              id="editDevicePower"
+              class="form-input"
+              placeholder="e.g., 150"
+              min="1"
+            />
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="editDeviceCritical" />
+              <span>Critical Device (Always On)</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="editDeviceStatus" />
+              <span>Currently On</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeEditModal()">
+            Cancel
+          </button>
+          <button class="btn btn-primary" onclick="saveDeviceChanges()">
+            💾 Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Price Modal -->
+    <div id="priceModal" class="modal" style="display: none">
+      <div class="modal-content" style="max-width: 800px">
+        <div class="modal-header">
+          <h3>💰 Today's Electricity Prices</h3>
+          <button class="modal-close" onclick="closePriceModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div id="priceModalContent">
+            <div style="text-align: center; padding: 40px">
+              <div class="spinner" style="margin: 0 auto"></div>
+              <p style="margin-top: 16px; color: #64748b">Loading prices...</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closePriceModal()">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
