@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from vpp_core import data_sources as ds
+from vpp_core.experiments import baseline_controllers
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import LPController, MPCController
 from vpp_core.params import default_community
@@ -103,9 +104,9 @@ def test_annual_pv_yield_bacau():
 
 
 def test_daily_load_energy_matches_target():
-    """Every day's energy is exactly the house's daily target (annual / 365 x seasonal factor)."""
+    """DEER source: every day's energy is exactly the house's daily target (annual / 365 x seasonal factor)."""
     s = generate_scenario_real(C, start=date(2023, 3, 20), n_days=5, dt_h=0.25, seed=2,
-                               annual_kwh_lo=3650, annual_kwh_hi=3650)
+                               annual_kwh_lo=3650, annual_kwh_hi=3650, load_source="deer")
     daily = s.load_kw.reshape(10, 5, 96).sum(axis=2) * s.dt_h
     doy = np.arange(79, 84)                                   # 20 March = day 79
     assert np.allclose(daily, 10.0 * (1 - 0.15 * np.cos(2 * np.pi * (doy - 172) / 365)), atol=1e-6)
@@ -146,3 +147,11 @@ def test_lp_and_mpc_run_on_real_data():
     mpc = compute_metrics(simulate(C, s1, MPCController(horizon_h=12)))["community"]
     assert mpc["balance_error_kwh"] == pytest.approx(0.0, abs=1e-6)
     assert mpc["ssr"] > 0.5                                                 # July: mostly self-supplied
+
+
+@pytest.mark.parametrize("start", [date(2023, 1, 10), date(2023, 7, 10)])
+def test_baselines_pass_strict_simulator_on_real_data(start):
+    s = generate_scenario_real(C, start=start, n_days=2, dt_h=0.25, seed=0)
+    for ctl in baseline_controllers():
+        res = simulate(C, s, ctl)                    # DispatchError on any battery / inverter / grid violation
+        assert compute_metrics(res)["community"]["balance_error_kwh"] == pytest.approx(0.0, abs=1e-6), ctl.name

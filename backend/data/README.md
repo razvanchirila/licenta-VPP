@@ -31,11 +31,63 @@ Producție PV orară simulată de PVGIS 5.3 (`seriescalc`, baza de radiație PVG
 
 ## load_profile_deer.csv
 
-Ponderile profilului specific de consum „Clienți casnici zona urbană” publicat de Distribuție Energie Electrică România (DEER, grupul Electrica), conform Ordinului ANRE 232/2020. 96 de intervale de decontare de 15 minute × 4 tipuri de zi: `ZL_SC` (zi lucrătoare, sezon cald), `ZNL_SC` (zi nelucrătoare, sezon cald), `ZL_SR` și `ZNL_SR` (sezon rece). Fiecare coloană însumează 1, deci consumul unei zile se obține înmulțind ponderile cu energia zilnică a casei. În simulator sezonul cald este aprilie–septembrie, zilele nelucrătoare sunt weekendurile și sărbătorile legale din 2023 (lista este în `data_sources.py`). Zona Bacău e operată de Delgaz Grid, ale cărui profiluri sunt doar cu cod de acces; profilul DEER este public și are aceeași formă (vârf de seară la 19–21).
+Ponderile profilului specific de consum „Clienți casnici zona urbană” publicat de Distribuție Energie Electrică România (DEER, grupul Electrica), conform Ordinului ANRE 232/2020. 96 de intervale de decontare de 15 minute × 4 tipuri de zi: `ZL_SC` (zi lucrătoare, sezon cald), `ZNL_SC` (zi nelucrătoare, sezon cald), `ZL_SR` și `ZNL_SR` (sezon rece). Fiecare coloană însumează 1, deci consumul unei zile se obține înmulțind ponderile cu energia zilnică a casei. În simulator sezonul cald este aprilie–septembrie, zilele nelucrătoare sunt weekendurile și sărbătorile legale din 2023 (lista este în `data_sources.py`). Zona Bacău e operată de Delgaz Grid, ale cărui profiluri sunt doar cu cod de acces; profilul DEER este public și are aceeași formă (vârf de seară la 19–21). De când consumul se construiește din lista de dispozitive (secțiunea următoare), profilul DEER rămâne varianta de comparație (`load_source="deer"` în `generate_scenario_real`) și rezerva pentru casele care nu apar în `dispozitive.csv`.
 
 - Sursă: https://www.distributie-energie.ro/profiluri-de-consum-deer/ (fișierul `Ponderi-aplicabile-grafic-Casnic-Urban.xlsx`)
 - Licență: date publice ale operatorului de distribuție, publicate prin obligație de reglementare
 - Descărcat: 11.09.2026
+
+## Consum din dispozitive (`dispozitive.csv`)
+
+Consumul fiecărei case nu mai vine dintr-o curbă statistică, ci din lista aparatelor din casă și din felul în care sunt folosite. Fișierul `dispozitive.csv` are un rând pentru fiecare aparat din fiecare casă și este gândit să fie editat de mână: este salvat în UTF-8 cu BOM și cu separator `;`, deci Excel în română îl deschide direct cu diacritice și coloane separate (dublu-clic pe fișier; la salvare se păstrează formatul „CSV (delimitat prin virgulă)”, care în setările românești folosește tot `;`). Zecimalele se pot scrie cu virgulă sau cu punct, ambele sunt citite. Rândurile goale sunt ignorate. Codul care îl citește și construiește profilul este `vpp_core/load_model.py`.
+
+| Coloană | Ce înseamnă |
+|---|---|
+| `casa` | numărul casei (1–10 în comunitatea standard); casa `i` din simulare folosește rândurile cu `casa = i` |
+| `dispozitiv` | numele aparatului, text liber (apare doar în rapoarte) |
+| `putere_w` | puterea medie cât timp aparatul merge, în W; pentru mașina de spălat sau de vase nu se pune puterea de pe etichetă (rezistența de 2 kW merge doar o parte din ciclu), ci energia unui ciclu împărțită la durata lui: 1 kWh în 90 de minute înseamnă 700 W |
+| `mod` | `continuu`, `zilnic`, `ciclic` sau `termic` (mai jos) |
+| `ore_pe_zi` | pentru `zilnic` și `termic`: ore de funcționare pe zi (la `termic`, în sezonul de vârf) |
+| `cicluri_pe_saptamana`, `durata_ciclu_min` | pentru `ciclic`: câte porniri pe săptămână și cât durează una, în minute |
+| `interval` | orele între care aparatul poate porni, `18-23`, `0-24` sau `22-6` (trece peste miezul nopții) |
+| `sezon` | pentru `termic`: `iarna`, `vara` sau `tot_anul` |
+| `flexibil` | `da` pentru aparatele care pot fi mutate sau întrerupte de VPP (mașină de spălat, de vase, uscător, boiler, mașină electrică); ele intră în `load_flex_kw`, restul în `load_crit_kw` |
+| `persoane` | câte persoane locuiesc în casă, repetat pe fiecare rând al casei; deocamdată doar informativ (apare în grafice), nu scalează consumul |
+
+Cele patru moduri:
+
+- `continuu` – aparatul merge tot timpul la `putere_w` (frigider, congelator, router, standby);
+- `zilnic` – în fiecare zi un bloc de `ore_pe_zi` ore (± 10 % aleator), pornit la o oră aleatoare din `interval` (iluminat, televizor, calculator, plită);
+- `ciclic` – `cicluri_pe_saptamana` porniri pe săptămână, în zile alese aleator, fiecare de `durata_ciclu_min` minute (± 10 %), cu ora de pornire aleatoare în `interval`; ciclul poate depăși capătul intervalului (cuptor, mașină de spălat, mașină de vase, boiler, încărcarea mașinii electrice);
+- `termic` – încălzire sau răcire: `ore_pe_zi` ore în sezonul lui (`sezon`), jumătate în cele două anotimpuri de tranziție și zero în anotimpul opus, împărțite în blocuri de câte jumătate de oră răspândite uniform în `interval`, cu o mică deplasare aleatoare, ca un termostat (pompă de căldură, panouri radiante, aer condiționat). Anotimpurile se iau după lună: iarnă noiembrie–martie, vară iunie–august, restul tranziție.
+
+Regula de energie este aceeași pentru toate: un aparat de `P` W care merge `h` ore pe zi consumă în medie `P × h` Wh pe zi, deci consumul anual al unei case se poate verifica cu un calcul de mână din tabel (coloana `kwh_an_calculat` din raport) și iese la fel cu ce produce simularea. Numerele aleatoare pornesc dintr-un seed pe casă (seed-ul scenariului și numărul casei), așa că o casă are același profil indiferent câte alte case sunt simulate, iar două rulări cu același seed dau exact același consum. Blocurile care trec peste miezul nopții (interval `22-6`) sunt generate și pentru ziua dinaintea ferestrei simulate, ca prima noapte să nu fie goală.
+
+Profilul intră în amândouă generatoarele de scenarii: `generate_scenario(..., load_source="dispozitive" | "sintetic")` și `generate_scenario_real(..., load_source="dispozitive" | "deer")`, cu `dispozitive` implicit. Producția PV și prețurile nu depind de sursa de consum (la același seed sunt identice), deci cele două surse se pot compara direct. Dacă o casă din comunitate nu are rânduri în fișier (de exemplu comunitățile de 50–200 de case din studiul de scalare), pentru ea se folosește sursa veche și se afișează un singur avertisment.
+
+Raportul de verificare se obține cu:
+
+```
+cd backend
+..\.venv\Scripts\python.exe -m vpp_core.load_model
+```
+
+și scrie în `results/consum/`: `consum_case.csv` (kWh pe zi pe anotimp, kWh pe an, împărțirea pe categorii, cota flexibilă), `profil_zi.png` (profilul zilnic mediu al caselor 1, 2 și 4 în zilele lucrătoare de iarnă, cu profilul DEER scalat la aceeași energie, punctat) și `consum_anual.png` (kWh pe an pe casă, pe categorii). Cele 10 case din prima versiune a fișierului, cu consumul anual rezultat din simularea anului 2023 la pas de 15 minute:
+
+| Casă | Cine locuiește | Ce o deosebește | kWh/zi iarnă | kWh/zi vară | kWh/an | Flexibil |
+|---|---|---|---|---|---|---|
+| 1 | familie, 4 persoane | plită și cuptor electrice, boiler, mașină de vase | 10,3 | 10,2 | 3743 | 43 % |
+| 2 | cuplu, 2 persoane | pompă de căldură 2,5 kW, 5,5 h/zi iarna | 18,7 | 5,0 | 4735 | 9 % |
+| 3 | familie, 5 persoane | două aparate de aer condiționat vara | 10,5 | 17,7 | 4924 | 31 % |
+| 4 | familie, 3 persoane | mașină electrică, 3 încărcări pe săptămână noaptea (7 kW, 2 h) | 13,3 | 13,5 | 4845 | 69 % |
+| 5 | familie, 3 persoane | panouri radiante electrice 3 kW, 4 h/zi iarna | 18,2 | 6,1 | 4793 | 15 % |
+| 6 | cuplu tânăr, 2 persoane | apartament mic, plecați ziua, aer condiționat mic | 4,5 | 7,2 | 2054 | 23 % |
+| 7 | pensionari, 2 persoane | acasă ziua, televizor mult, radiator electric iarna | 12,6 | 8,1 | 3908 | 18 % |
+| 8 | familie, 4 persoane | uscător de rufe și aer condiționat | 11,1 | 14,8 | 4616 | 41 % |
+| 9 | familie, 3 persoane | birou acasă: calculator 9 h/zi, aer condiționat în birou | 9,3 | 14,2 | 4151 | 26 % |
+| 10 | doi tineri | plecați ziua, consum doar seara, radiator mic | 6,4 | 4,4 | 2038 | 23 % |
+
+Media pe casă este 3981 kWh pe an, iar iarna 11,5 kWh pe zi, foarte aproape de cei 11,4–12,2 kWh pe zi pe care îi dădea profilul DEER scalat la 3000–4500 kWh pe an, deci rezultatele vechi ale evaluării rămân comparabile ca ordin de mărime. Ce se schimbă este forma: vârful de seară e mai ascuțit decât în profilul DEER (care e o medie pe mii de clienți), casele cu încălzire electrică au iarna dublu față de vară, iar partea flexibilă are acum un sens fizic (aparatele marcate `da`), nu o împărțire fixă între o bază constantă și rest.
 
 ## Tarif și prosumatori
 
@@ -68,3 +120,25 @@ c_deg = preț / energie garantată = 10.010 lei / 50.000 kWh = 0,20 lei/kWh
 ```
 
 Calculul din cicluri, 10.010 / (6000 × 16 × 0,9), dă 0,12 lei/kWh; se folosește valoarea prudentă din garanție. Metoda: He et al., „Power System Dispatch with Marginal Degradation Cost of Battery Storage”, IEEE Transactions on Power Systems, 2020.
+
+Valoarea este `LPWeights.deg_cost` din `vpp_core/optimizer.py`, penalizarea pe fiecare kWh încărcat sau descărcat cu care LP-ul și MPC-ul decid dacă merită să folosească bateria. Valori mai mari, de exemplu 0,45 lei/kWh, apar în literatură din prețuri de retail din alte țări și sunt folosite în studiul de sensibilitate doar ca margine superioară.
+
+### Module și invertor
+
+În simulator (`vpp_core/params.py`, funcția `deye_se_f16`) o casă are 0, 1 sau 2 module SE-F16 legate în paralel:
+
+| Module | Capacitate | SOC minim | Încărcare / descărcare | Ce limitează puterea |
+|---|---|---|---|---|
+| 1 | 16 kWh | 10 % (1,6 kWh) | 8 kW / 8 kW | curentul de încărcare al modulului: 160 A × 51,2 V ≈ 8,2 kW |
+| 2 | 32 kWh | 10 % (3,2 kWh) | 10 kW / 10 kW | portul de baterie al invertorului hibrid de 10 kW |
+
+Descărcarea unui singur modul ar permite 230 A (≈ 11,8 kW), dar se păstrează 8 kW în ambele sensuri: fișa recomandă același curent (157 A) la încărcare și descărcare, iar invertorul de 10 kW nu ar trece oricum mai mult; diferența 8 / 10 kW la descărcare nu ar schimba rezultatele. Randamentul este 95 % pe fiecare sens (≈ 90 % dus-întors). Comunitatea standard din evaluare are 10 case cu câte 10 kWp: 2 fără baterie, 5 cu un modul și 3 cu două (176 kWh în total).
+
+Fiecare casă are un invertor hibrid de 10 kW (`HouseParams.inverter_kw`), care limitează puterea netă în curent alternativ a casei, în ambele sensuri, la fiecare pas de timp:
+
+```
+(PV - PV limitat) + descărcare - încărcare <= 10 kW
+încărcare - descărcare - (PV - PV limitat) <= 10 kW
+```
+
+Regula este impusă în programul liniar (două rânduri pe casă și pas), verificată de simulator (`DispatchError` la orice depășire) și respectată de controlerul pe reguli. Consecința practică: o casă nu poate trimite în rețea PV plus baterie peste 10 kW, chiar dacă bateria ar mai avea putere; vârful PV (până la 9,1 kW pe 10 kWp în datele PVGIS) trece singur prin invertor, dar nu împreună cu descărcarea.

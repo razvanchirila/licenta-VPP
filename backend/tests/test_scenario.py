@@ -53,8 +53,13 @@ def test_pv_never_exceeds_installed_power():
 
 
 def test_daily_load_plausible():
+    """June: 2000-5000 kWh/year houses, the air-conditioned ones at the top (bounds were 4-16 for the old curve)."""
     s = generate_scenario(C, n_days=14, seed=3)
     per_house_day = s.load_kw.sum(axis=1) * s.dt_h / 14
+    assert (per_house_day > 3).all() and (per_house_day < 20).all()
+    assert 8 < per_house_day.mean() < 14
+    old = generate_scenario(C, n_days=14, seed=3, load_source="sintetic")
+    per_house_day = old.load_kw.sum(axis=1) * old.dt_h / 14
     assert (per_house_day > 4).all() and (per_house_day < 16).all()
 
 

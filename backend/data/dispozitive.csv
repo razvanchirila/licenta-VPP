@@ -1,0 +1,114 @@
+﻿casa;dispozitiv;putere_w;mod;ore_pe_zi;cicluri_pe_saptamana;durata_ciclu_min;interval;sezon;flexibil;persoane
+1;frigider;45;continuu;;;;0-24;tot_anul;nu;4
+1;congelator;35;continuu;;;;0-24;tot_anul;nu;4
+1;router și standby;25;continuu;;;;0-24;tot_anul;nu;4
+1;iluminat;100;zilnic;5;;;17-23;tot_anul;nu;4
+1;televizor;100;zilnic;4;;;18-23;tot_anul;nu;4
+1;calculatoare și laptopuri;150;zilnic;4;;;16-23;tot_anul;nu;4
+1;plită electrică;1500;zilnic;0,8;;;11-21;tot_anul;nu;4
+1;cuptor electric;2000;ciclic;;3;45;17-20;tot_anul;nu;4
+1;mașină de spălat;700;ciclic;;4;90;8-21;tot_anul;da;4
+1;mașină de vase;900;ciclic;;5;120;19-23;tot_anul;da;4
+1;boiler electric;2000;ciclic;;7;75;6-22;tot_anul;da;4
+2;frigider;45;continuu;;;;0-24;tot_anul;nu;2
+2;router și standby;25;continuu;;;;0-24;tot_anul;nu;2
+2;iluminat;80;zilnic;4;;;17-23;tot_anul;nu;2
+2;televizor;100;zilnic;3;;;19-23;tot_anul;nu;2
+2;laptop;60;zilnic;3;;;18-23;tot_anul;nu;2
+2;plită electrică;1500;zilnic;0,6;;;11-21;tot_anul;nu;2
+2;cuptor electric;2000;ciclic;;2;40;17-20;tot_anul;nu;2
+2;mașină de spălat;700;ciclic;;3;90;8-21;tot_anul;da;2
+2;mașină de vase;900;ciclic;;3;120;19-23;tot_anul;da;2
+2;pompă de căldură;2500;termic;5,5;;;0-24;iarna;nu;2
+3;frigider;50;continuu;;;;0-24;tot_anul;nu;5
+3;congelator;35;continuu;;;;0-24;tot_anul;nu;5
+3;router și standby;30;continuu;;;;0-24;tot_anul;nu;5
+3;iluminat;120;zilnic;5;;;17-23;tot_anul;nu;5
+3;televizor;100;zilnic;5;;;17-23;tot_anul;nu;5
+3;calculatoare și laptopuri;150;zilnic;4;;;14-23;tot_anul;nu;5
+3;plită electrică;1500;zilnic;0,8;;;11-21;tot_anul;nu;5
+3;cuptor electric;2000;ciclic;;3;45;17-20;tot_anul;nu;5
+3;mașină de spălat;700;ciclic;;6;90;8-21;tot_anul;da;5
+3;mașină de vase;900;ciclic;;5;120;19-23;tot_anul;da;5
+3;boiler electric;2000;ciclic;;7;60;6-22;tot_anul;da;5
+3;aer condiționat living;1200;termic;4;;;12-23;vara;nu;5
+3;aer condiționat dormitor;1200;termic;2;;;21-7;vara;nu;5
+4;frigider;45;continuu;;;;0-24;tot_anul;nu;3
+4;router și standby;25;continuu;;;;0-24;tot_anul;nu;3
+4;iluminat;100;zilnic;4;;;17-23;tot_anul;nu;3
+4;televizor;100;zilnic;3;;;19-23;tot_anul;nu;3
+4;laptop;100;zilnic;3;;;18-23;tot_anul;nu;3
+4;plită electrică;1500;zilnic;0,7;;;11-21;tot_anul;nu;3
+4;cuptor electric;2000;ciclic;;2;45;17-20;tot_anul;nu;3
+4;mașină de spălat;700;ciclic;;4;90;8-21;tot_anul;da;3
+4;mașină de vase;900;ciclic;;4;120;19-23;tot_anul;da;3
+4;boiler electric;2000;ciclic;;7;45;6-22;tot_anul;da;3
+4;încărcare mașină electrică;7000;ciclic;;3;120;22-6;tot_anul;da;3
+5;frigider;45;continuu;;;;0-24;tot_anul;nu;3
+5;router și standby;25;continuu;;;;0-24;tot_anul;nu;3
+5;iluminat;100;zilnic;4;;;17-23;tot_anul;nu;3
+5;televizor;100;zilnic;4;;;18-23;tot_anul;nu;3
+5;laptop;80;zilnic;3;;;18-23;tot_anul;nu;3
+5;plită electrică;1500;zilnic;0,7;;;11-21;tot_anul;nu;3
+5;cuptor electric;2000;ciclic;;2;45;17-20;tot_anul;nu;3
+5;mașină de spălat;700;ciclic;;3;90;8-21;tot_anul;da;3
+5;boiler electric;2000;ciclic;;7;45;6-22;tot_anul;da;3
+5;panouri radiante electrice;3000;termic;4;;;6-23;iarna;nu;3
+6;frigider;40;continuu;;;;0-24;tot_anul;nu;2
+6;router și standby;20;continuu;;;;0-24;tot_anul;nu;2
+6;iluminat;60;zilnic;4;;;17-23;tot_anul;nu;2
+6;televizor;80;zilnic;3;;;19-23;tot_anul;nu;2
+6;laptop;50;zilnic;2;;;18-23;tot_anul;nu;2
+6;plită electrică;1500;zilnic;0,5;;;17-21;tot_anul;nu;2
+6;fierbător și microunde;1200;zilnic;0,2;;;7-22;tot_anul;nu;2
+6;cuptor electric;2000;ciclic;;1;40;17-20;tot_anul;nu;2
+6;mașină de spălat;700;ciclic;;2;90;8-21;tot_anul;da;2
+6;boiler electric;1500;ciclic;;7;40;6-22;tot_anul;da;2
+6;aer condiționat;900;termic;3;;;13-23;vara;nu;2
+7;frigider;50;continuu;;;;0-24;tot_anul;nu;2
+7;congelator;35;continuu;;;;0-24;tot_anul;nu;2
+7;router și standby;20;continuu;;;;0-24;tot_anul;nu;2
+7;iluminat;80;zilnic;6;;;6-23;tot_anul;nu;2
+7;televizor;120;zilnic;7;;;9-23;tot_anul;nu;2
+7;radio și calculator;40;zilnic;4;;;9-21;tot_anul;nu;2
+7;plită electrică;1500;zilnic;1;;;10-19;tot_anul;nu;2
+7;cuptor electric;2000;ciclic;;3;45;10-19;tot_anul;nu;2
+7;mașină de spălat;700;ciclic;;3;90;9-18;tot_anul;da;2
+7;boiler electric;2000;ciclic;;7;45;6-22;tot_anul;da;2
+7;radiator electric;1500;termic;3;;;6-22;iarna;nu;2
+8;frigider;45;continuu;;;;0-24;tot_anul;nu;4
+8;congelator;35;continuu;;;;0-24;tot_anul;nu;4
+8;router și standby;30;continuu;;;;0-24;tot_anul;nu;4
+8;iluminat;100;zilnic;5;;;17-23;tot_anul;nu;4
+8;televizor;100;zilnic;4;;;18-23;tot_anul;nu;4
+8;calculatoare și laptopuri;150;zilnic;4;;;16-23;tot_anul;nu;4
+8;plită electrică;1500;zilnic;0,8;;;11-21;tot_anul;nu;4
+8;cuptor electric;2000;ciclic;;3;45;17-20;tot_anul;nu;4
+8;mașină de spălat;700;ciclic;;5;90;8-21;tot_anul;da;4
+8;uscător de rufe;1300;ciclic;;4;90;9-22;tot_anul;da;4
+8;mașină de vase;900;ciclic;;5;120;19-23;tot_anul;da;4
+8;boiler electric;2000;ciclic;;7;60;6-22;tot_anul;da;4
+8;aer condiționat;1200;termic;3;;;13-23;vara;nu;4
+9;frigider;45;continuu;;;;0-24;tot_anul;nu;3
+9;router și echipamente de rețea;30;continuu;;;;0-24;tot_anul;nu;3
+9;iluminat;100;zilnic;6;;;16-23;tot_anul;nu;3
+9;televizor;100;zilnic;3;;;19-23;tot_anul;nu;3
+9;calculator de birou și monitoare;200;zilnic;9;;;8-18;tot_anul;nu;3
+9;laptop;60;zilnic;3;;;18-23;tot_anul;nu;3
+9;plită electrică;1500;zilnic;0,8;;;11-21;tot_anul;nu;3
+9;cuptor electric;2000;ciclic;;2;45;17-20;tot_anul;nu;3
+9;mașină de spălat;700;ciclic;;3;90;8-21;tot_anul;da;3
+9;mașină de vase;900;ciclic;;4;120;19-23;tot_anul;da;3
+9;boiler electric;2000;ciclic;;7;45;6-22;tot_anul;da;3
+9;aer condiționat birou;1000;termic;5;;;9-19;vara;nu;3
+10;frigider;40;continuu;;;;0-24;tot_anul;nu;2
+10;router și standby;20;continuu;;;;0-24;tot_anul;nu;2
+10;iluminat;50;zilnic;4;;;18-24;tot_anul;nu;2
+10;televizor;80;zilnic;3;;;19-24;tot_anul;nu;2
+10;laptop;60;zilnic;4;;;18-24;tot_anul;nu;2
+10;plită electrică;1500;zilnic;0,4;;;18-22;tot_anul;nu;2
+10;cuptor cu microunde;1000;zilnic;0,2;;;7-23;tot_anul;nu;2
+10;cuptor electric;2000;ciclic;;1;40;18-21;tot_anul;nu;2
+10;mașină de spălat;700;ciclic;;2;90;18-23;tot_anul;da;2
+10;boiler electric;1500;ciclic;;7;40;6-23;tot_anul;da;2
+10;radiator electric;1000;termic;2;;;18-24;iarna;nu;2

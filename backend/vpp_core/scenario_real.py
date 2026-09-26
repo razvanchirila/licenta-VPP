@@ -1,5 +1,7 @@
 """
-Scenario from real 2023 data (PVGIS, DEER profile, PZU via data_sources.py); sources in backend/data/README.md.
+Scenario from real 2023 data (PVGIS, PZU via data_sources.py); sources in backend/data/README.md.
+Load: the appliance list (load_source="dispozitive", backend/data/dispozitive.csv, see load_model.py) or the
+DEER statistical profile scaled to an annual consumption ("deer").
 
     import  = (PZU + SUPPLY_MARGIN + NETWORK_ADDER) x (1 + VAT)
               PZU: Ember/ENTSO-E day-ahead, lei/kWh at 4.9465 RON/EUR
@@ -26,6 +28,7 @@ NETWORK_ADDER = 0.5345      # lei/kWh, excl. VAT
 VAT = 0.21
 
 EXPORT_RULES = ("energie_activa", "pzu")
+LOAD_SOURCES = ("dispozitive", "deer")
 
 
 def resample_hourly(hourly: np.ndarray, dt_h: float) -> np.ndarray:
@@ -142,12 +145,15 @@ def generate_scenario_real(
     annual_kwh_hi: float = 4500.0,
     p2p_price_factor: float = 0.7,
     export_rule: str = "energie_activa",
+    load_source: str = "dispozitive",
 ) -> Scenario:
     spd = steps_per_day_of(dt_h)
     if n_days < 1:
         raise ValueError("n_days must be >= 1")
     if export_rule not in EXPORT_RULES:
         raise ValueError(f"export_rule must be one of {EXPORT_RULES}")
+    if load_source not in LOAD_SOURCES:
+        raise ValueError(f"load_source must be one of {LOAD_SOURCES}")
     _check_dates(start, n_days)
     rng = np.random.default_rng(seed)
     days = [start + timedelta(days=d) for d in range(n_days)]
@@ -159,6 +165,11 @@ def generate_scenario_real(
     critical, flexible = _load_from_deer(
         community.n_houses, days, dt_h, spd, season, annual_kwh_lo, annual_kwh_hi, rng
     )
+    if load_source == "dispozitive":
+        from vpp_core.load_model import DISPOZITIVE_CSV, community_load  # here, so `-m vpp_core.load_model` runs clean
+
+        critical, flexible = community_load(community, DISPOZITIVE_CSV, start, n_days, dt_h, seed,
+                                            fallback=(critical, flexible))
     price_import, price_export, price_p2p = _prices_from_pzu(first_day, n_days, dt_h, p2p_price_factor, export_rule)
 
     return Scenario(

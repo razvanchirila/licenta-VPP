@@ -1,4 +1,6 @@
-"""Input time series (synthetic): step averages in kW over steps of dt_h hours, prices in lei/kWh."""
+"""Input time series (synthetic): step averages in kW over steps of dt_h hours, prices in lei/kWh.
+Load comes from the appliance list (load_source="dispozitive", backend/data/dispozitive.csv, see load_model.py)
+or from the synthetic curve below ("sintetic")."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,6 +12,7 @@ import numpy as np
 from vpp_core.params import CommunityParams
 
 Weather = Literal["random", "clear", "cloudy"]
+LoadSource = Literal["dispozitive", "sintetic"]
 
 PERFORMANCE_RATIO = 0.80   # inverter, temperature, soiling, wiring losses
 RETAIL_ADDER = 0.62        # lei/kWh: network tariffs, taxes, supplier margin on top of PZU
@@ -165,8 +168,11 @@ def generate_scenario(
     latitude_deg: float = 46.5,
     weather: Weather = "random",
     p2p_price_factor: float = 0.7,
+    load_source: LoadSource = "dispozitive",
 ) -> Scenario:
     spd = steps_per_day_of(dt_h)
+    if load_source not in ("dispozitive", "sintetic"):
+        raise ValueError("load_source must be 'dispozitive' or 'sintetic'")
     rng = np.random.default_rng(seed)
     n_houses, n_steps = community.n_houses, n_days * spd
 
@@ -177,7 +183,13 @@ def generate_scenario(
 
     sky = _sky_clearness(weather, day_doy, n_steps, spd, rng)
     pv = _pv_profile(community, hours, doy, latitude_deg, sky, rng)
+    # the synthetic load is always drawn, so PV and prices are the same for both load sources at a given seed
     critical, flexible = _load_profile(n_houses, n_days, spd, dt_h, hours, season, rng)
+    if load_source == "dispozitive":
+        from vpp_core.load_model import DISPOZITIVE_CSV, community_load  # here, so `-m vpp_core.load_model` runs clean
+
+        critical, flexible = community_load(community, DISPOZITIVE_CSV, start, n_days, dt_h, seed,
+                                            fallback=(critical, flexible))
     price_import, price_export, price_p2p = _price_profile(hours, season, n_days, spd, p2p_price_factor, rng)
 
     return Scenario(
