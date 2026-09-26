@@ -1,133 +1,257 @@
-"""Simulation Loop Service - runs VPP simulation with internal simulation clock."""
-import asyncio
-import logging
-import time
-from datetime import datetime, timedelta
-from typing import List, Optional, Callable
+"""
+Live simulation on top of vpp_core: one simulated step (dt_h, default 15 min) per real tick.
+Step order (SimulationLoop._step): community from the DB -> scenario slice (PV, prices) + load from the
+switched-on devices -> controller dispatch -> batteries -> P2P trades -> persist in one transaction ->
+advance clock and broadcast. PV and prices come from the 2023 data (SIM_DATA=real, the simulated
+calendar day mapped to the same day of the data year) or from the synthetic generator.
+"""
+from __future__ import annotations
 
-from fastapi import WebSocket
+import asyncio
+import json
+import logging
+from collections import deque
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timedelta
+
+import numpy as np
+from sqlalchemy import delete, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.database import get_session_context
+from app.db.models import (
+    BatteryModel,
+    DeviceModel,
+    EnergyLogModel,
+    HouseModel,
+    HouseStepModel,
+    SimulationStateModel,
+    TradeTransactionModel,
+    VPPReserveModel,
+    WalletModel,
+    WalletTransactionModel,
+)
+from app.db.repositories import HouseRepository
+from app.services.device_load import DeviceProfiles, house_load
+from app.services.settlement import SettlementService, Trade
+from app.settings import settings
+from vpp_core import data_sources as ds
+from vpp_core.battery import Battery
+from vpp_core.controllers import RuleBasedController
+from vpp_core.dispatch import FLOWS, Dispatch
+from vpp_core.optimizer import MPCController
+from vpp_core.params import BatteryParams, CommunityParams, GridParams, HouseParams
+from vpp_core.scenario import Scenario, generate_scenario
+from vpp_core.scenario_real import generate_scenario_real
+from vpp_core.simulator import SimState, validate
 
 logger = logging.getLogger(__name__)
 
+CONTROLLER_NAMES = ("reguli", "mpc")
+DATA_SOURCES = ("real", "sintetic")
+EPS = 1e-9
+MIN_TRADE_KWH = 0.005   # smaller seller->buyer shares are not worth a wallet transaction
+HISTORY_SIZE = 600
 
-class SimulationClock:
-    """
-    Internal simulation clock.
-    
-    Maps real time to simulation time:
-    - 5 seconds real = 10 minutes simulation (configurable)
-    - Tracks simulation datetime independently
-    """
-    
-    def __init__(
-        self,
-        start_datetime: Optional[datetime] = None,
-        sim_minutes_per_step: int = 10
-    ):
-        # Start at midnight today if not specified
-        if start_datetime is None:
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            start_datetime = today
-        
-        self.sim_datetime = start_datetime
-        self.sim_minutes_per_step = sim_minutes_per_step  # 10 min sim per 5 sec real
-        self.total_sim_minutes = 0
-    
-    def advance(self) -> datetime:
-        """Advance simulation clock by one step (10 minutes)."""
-        self.sim_datetime += timedelta(minutes=self.sim_minutes_per_step)
-        self.total_sim_minutes += self.sim_minutes_per_step
-        return self.sim_datetime
-    
+
+def data_day(day: date, year: int) -> date:
+    """The same month and day in the data year; 29 February maps to 28 February."""
+    try:
+        return day.replace(year=year)
+    except ValueError:
+        return day.replace(year=year, day=28)
+
+
+def real_data_missing(year: int) -> str | None:
+    """Why the real data cannot be used, or None."""
+    missing = [p.name for p in (ds.PRICES_CSV, ds.PV_CSV, ds.DEER_CSV) if not p.exists()]
+    if missing:
+        return f"lipsesc {', '.join(missing)} din {ds.DATA_DIR}"
+    if year != ds.YEAR:
+        return f"SIM_PRICE_YEAR={year}, dar datele acopera doar {ds.YEAR}"
+    return None
+
+
+@dataclass(frozen=True)
+class SimConfig:
+    controller: str = "reguli"
+    tick_seconds: float = 2.0
+    import_max_kw: float = 50.0
+    export_max_kw: float = 40.0
+    internal_line_kw: float = 30.0
+    p2p_price_factor: float = 0.7
+    min_p2p_balance_lei: float = 5.0
+    seed: int = 42
+
+    def check(self) -> None:
+        if self.controller not in CONTROLLER_NAMES:
+            raise ValueError(f"controller trebuie sa fie unul din {CONTROLLER_NAMES}")
+        if not 0.2 <= self.tick_seconds <= 60:
+            raise ValueError("tick_seconds trebuie sa fie intre 0.2 si 60")
+        for name in ("import_max_kw", "export_max_kw", "internal_line_kw", "min_p2p_balance_lei"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} trebuie sa fie >= 0")
+        if not 0 < self.p2p_price_factor <= 1:
+            raise ValueError("p2p_price_factor trebuie sa fie in (0, 1]")
+
     @property
-    def hour(self) -> int:
-        """Current simulation hour (0-23)."""
-        return self.sim_datetime.hour
-    
-    @property
-    def minute(self) -> int:
-        """Current simulation minute (0-59)."""
-        return self.sim_datetime.minute
-    
-    @property
-    def time_str(self) -> str:
-        """Current simulation time as HH:MM string."""
-        return self.sim_datetime.strftime("%H:%M")
-    
-    @property
-    def datetime_str(self) -> str:
-        """Current simulation datetime as ISO string."""
-        return self.sim_datetime.isoformat()
-    
-    @property
-    def dt_hours(self) -> float:
-        """Time delta in hours for energy calculations."""
-        return self.sim_minutes_per_step / 60.0  # 10 min = 0.1667 hours
-    
+    def grid(self) -> GridParams:
+        return GridParams(self.import_max_kw, self.export_max_kw, self.internal_line_kw)
+
     def to_dict(self) -> dict:
-        """Get clock state as dictionary."""
-        return {
-            "sim_datetime": self.datetime_str,
-            "sim_time": self.time_str,
-            "sim_hour": self.hour,
-            "sim_minute": self.minute,
-            "total_sim_minutes": self.total_sim_minutes,
-            "sim_minutes_per_step": self.sim_minutes_per_step,
-            "dt_hours": round(self.dt_hours, 4)
-        }
+        return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> SimConfig:
+        known = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**known)
+
+    @classmethod
+    def from_settings(cls) -> SimConfig:
+        return cls(controller=settings.sim_controller, tick_seconds=settings.sim_tick_seconds, seed=settings.sim_seed)
+
+
+@dataclass
+class StepInputs:
+    """What one step starts from, per house (arrays of length H) plus the prices of the step."""
+    t: int
+    pv_kw: np.ndarray
+    load_kw: np.ndarray        # switched-on devices
+    price_import: float
+    price_export: float
+    price_p2p: float
+
+
+def make_controller(name: str, seed: int):
+    if name == "mpc":
+        return MPCController(seed=seed, name="mpc")
+    return RuleBasedController(apply_alpha=True, name="reguli")
+
+
+def community_from_houses(houses: list[HouseModel], grid: GridParams, min_p2p_balance: float) -> CommunityParams:
+    params = []
+    for h in houses:
+        battery = None
+        init_ratio = 0.5
+        if h.battery:
+            b = h.battery
+            battery = BatteryParams(
+                capacity_kwh=b.capacity_kwh, soc_min_ratio=min(max(b.soc_min_kwh / b.capacity_kwh, 0.0), 0.95),
+                p_ch_max_kw=b.p_ch_max_kw, p_dis_max_kw=b.p_dis_max_kw, eta_ch=b.eta_ch, eta_dis=b.eta_dis,
+            )
+            init_ratio = max(0.5, battery.soc_min_ratio)
+        prefs = h.trading_preferences
+        # vpp_core has a single P2P flag per house: a house takes part only if it may both sell and buy
+        p2p = bool(prefs and prefs.selling_enabled and prefs.buying_enabled)
+        if p2p and h.wallet is not None and h.wallet.balance_lei < min_p2p_balance:
+            p2p = False
+        params.append(HouseParams(
+            id=h.id, pv_kwp=h.pv_capacity_kw if h.has_pv else 0.0, battery=battery,
+            mode=h.mode if h.mode in ("Eco", "Profit") else "Eco", p2p_enabled=p2p, initial_soc_ratio=init_ratio,
+        ))
+    return CommunityParams(houses=tuple(params), grid=grid)
 
 
 class SimulationLoop:
-    """
-    Background service that runs VPP simulation with internal clock.
-    
-    Configuration:
-    - interval_seconds: Real time between steps (default 5s)
-    - sim_minutes_per_step: Simulation minutes per step (default 10 min)
-    
-    This means: every 5 real seconds, 10 simulation minutes pass.
-    So 1 real hour = 120 simulation hours (5 simulation days).
-    """
-    
-    def __init__(
-        self,
-        interval_seconds: float = 5.0,
-        sim_minutes_per_step: int = 10
-    ):
-        self.interval_seconds = interval_seconds
-        self.sim_minutes_per_step = sim_minutes_per_step
-        
+    def __init__(self):
+        if settings.sim_data not in DATA_SOURCES:
+            raise ValueError(f"SIM_DATA trebuie sa fie unul din {DATA_SOURCES}")
+        self.config = SimConfig.from_settings()
+        self.dt_h = settings.sim_dt_hours
+        self.data_year = settings.sim_price_year
+        self.data_source = "sintetic"
+        self.day: date = settings.sim_start_date
+        self.t = 0                      # step index inside the current day
+        self.total_steps = 0
         self.running = False
         self.paused = False
-        self.total_steps = 0
-        self.last_step_time: Optional[float] = None
-        self.last_result: Optional[dict] = None
-        
-        # Internal simulation clock
-        self.clock = SimulationClock(sim_minutes_per_step=sim_minutes_per_step)
-        
-        self._task: Optional[asyncio.Task] = None
-        self._websocket_clients: List[WebSocket] = []
-        self._on_step_callbacks: List[Callable] = []
-    
-    async def start(self):
-        """Start the simulation loop."""
+        self.loaded = False
+        self.last_error: str | None = None
+        self.community: CommunityParams | None = None
+        self.scenario: Scenario | None = None
+        self.scenario_key = None
+        self.controller = None
+        self.batteries: list[Battery | None] = []
+        self.house_ids: list[int] = []
+        self.profiles = DeviceProfiles(self.dt_h)
+        self.device_kw: dict[int, np.ndarray] = {}     # device id -> kW over the scenario window while on
+        self.history: deque = deque(maxlen=HISTORY_SIZE)
+        self.last_result: dict | None = None
+        self.lock = asyncio.Lock()
+        self._task: asyncio.Task | None = None
+        self._ws_clients: list = []
+        self._fallback_reason: str | None = None
+
+    @property
+    def steps_per_day(self) -> int:
+        return round(24 / self.dt_h)
+
+    @property
+    def window_days(self) -> tuple[date, date]:
+        return self.day, self.day + timedelta(days=1)
+
+    def _resolve_data_source(self) -> str:
+        if settings.sim_data != "real":
+            return "sintetic"
+        reason = real_data_missing(self.data_year)
+        if reason is None:
+            self._fallback_reason = None
+            return "real"
+        if reason != self._fallback_reason:
+            logger.warning("Date reale indisponibile (%s): PV si preturi sintetice", reason)
+            self._fallback_reason = reason
+        return "sintetic"
+
+    @property
+    def sim_datetime(self) -> datetime:
+        return self._clock_at(self.day, self.t)
+
+    def _clock_at(self, day: date, t: int) -> datetime:
+        return datetime.combine(day, datetime.min.time()) + timedelta(hours=t * self.dt_h)
+
+    def _next_clock(self) -> tuple[date, int]:
+        if self.t + 1 >= self.steps_per_day:
+            return self.day + timedelta(days=1), 0
+        return self.day, self.t + 1
+
+    def current_prices(self) -> tuple[float, float, float]:
+        """(import, export, p2p) lei/kWh at the current step."""
+        sc, t = self.scenario, self.t
+        return float(sc.price_import[t]), float(sc.price_export[t]), float(sc.price_p2p[t])
+
+    async def load(self) -> None:
+        async with get_session_context() as session:
+            state = await session.get(SimulationStateModel, 1)
+            if state is not None:
+                self._restore_state(state)
+            self._sync(await HouseRepository(session).get_all_with_relations())
+        self.loaded = True
+        logger.info("Simulation loaded: %d houses, controller %s, sim time %s",
+                    len(self.house_ids), self.config.controller, self.sim_datetime.isoformat())
+
+    def _restore_state(self, state: SimulationStateModel) -> None:
+        self.total_steps = state.total_steps
+        if state.config_json:
+            try:
+                cfg = SimConfig.from_dict(json.loads(state.config_json))
+                cfg.check()
+                self.config = cfg
+            except (ValueError, TypeError) as e:
+                logger.warning("Ignoring saved config: %s", e)
+        if state.sim_datetime is not None:
+            self.day = state.sim_datetime.date()
+            minutes = state.sim_datetime.hour * 60 + state.sim_datetime.minute
+            self.t = min(round(minutes / (self.dt_h * 60)), self.steps_per_day - 1)
+
+    async def start(self) -> None:
         if self.running:
-            logger.warning("Simulation loop already running")
             return
-        
         self.running = True
         self.paused = False
-        logger.info(
-            f"Starting simulation loop: {self.interval_seconds}s real = "
-            f"{self.sim_minutes_per_step} min simulation"
-        )
-        
-        self._task = asyncio.create_task(self._run_loop())
-    
-    async def stop(self):
-        """Stop the simulation loop."""
+        self.last_error = None
+        self._task = asyncio.create_task(self._run())
+
+    async def stop(self) -> None:
         self.running = False
         if self._task:
             self._task.cancel()
@@ -136,485 +260,354 @@ class SimulationLoop:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        logger.info("Simulation loop stopped")
-    
-    def pause(self):
-        """Pause the simulation loop."""
-        self.paused = True
-        logger.info("Simulation loop paused")
-    
-    def resume(self):
-        """Resume the simulation loop."""
-        self.paused = False
-        logger.info("Simulation loop resumed")
-    
-    def set_speed(self, seconds: float):
-        """Change the real-time interval between steps."""
-        self.interval_seconds = max(1.0, min(60.0, seconds))
-        logger.info(f"Simulation interval set to {self.interval_seconds}s")
-    
-    def set_sim_speed(self, minutes_per_step: int):
-        """Change how many simulation minutes pass per step."""
-        self.sim_minutes_per_step = max(1, min(60, minutes_per_step))
-        self.clock.sim_minutes_per_step = self.sim_minutes_per_step
-        logger.info(f"Simulation speed set to {self.sim_minutes_per_step} min/step")
-    
-    async def _run_loop(self):
-        """Main loop - executes steps at configured interval."""
+
+    async def _run(self) -> None:
         while self.running:
-            try:
-                if not self.paused:
-                    result = await self.execute_step()
-                    if result:
-                        await self._broadcast_to_clients(result)
-                
-                await asyncio.sleep(self.interval_seconds)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in simulation loop: {e}")
-                await asyncio.sleep(self.interval_seconds)
-    
-    async def _sync_from_db(self):
-        """
-        Sync ALL state FROM database to memory before each simulation step.
-        
-        This ensures any manual DB changes (via MySQL queries) are reflected
-        in the simulation. DB is the source of truth for:
-        - House mode (Eco/Profit)
-        - Device status (on/off)
-        - Device properties (name, power, critical)
-        - Battery capacity and limits
-        - Trading preferences (selling_enabled, buying_enabled, prices)
-        
-        Battery SOC is managed by simulation and written TO DB.
-        """
-        try:
-            from app.api.state import vpp_state
-            from app.db.database import get_session_context
-            from app.db.repositories import HouseRepository
-            from app.db.repositories.trading_repository import TradingPreferencesRepository
-            from app.models.device import Device as MemDevice
-            
-            if not vpp_state.vpp:
-                return
-            
-            async with get_session_context() as session:
-                house_repo = HouseRepository(session)
-                trading_repo = TradingPreferencesRepository(session)
-                
-                for house in vpp_state.vpp.houses:
-                    db_house = await house_repo.get_by_id_with_relations(house.id)
-                    if not db_house:
-                        continue
-                    
-                    # Sync house properties from DB
-                    house.mode = db_house.mode
-                    house.has_pv = db_house.has_pv
-                    house.pv_capacity_kw = db_house.pv_capacity_kw
-                    
-                    # Sync trading preferences from DB
-                    trading_prefs = await trading_repo.get_by_house_id(house.id)
-                    if trading_prefs:
-                        house.selling_enabled = trading_prefs.selling_enabled
-                        house.buying_enabled = trading_prefs.buying_enabled
-                        house.trading_price_mode = trading_prefs.price_mode
-                        house.trading_fixed_price = trading_prefs.fixed_price_lei_kwh
-                        house.trading_discount_percent = trading_prefs.discount_percent
-                    
-                    # Sync battery properties (but NOT soc_kwh - that's simulation controlled)
-                    if house.battery and db_house.battery:
-                        house.battery.capacity_kwh = db_house.battery.capacity_kwh
-                        house.battery.soc_max_kwh = db_house.battery.soc_max_kwh
-                        house.battery.soc_min_kwh = db_house.battery.soc_min_kwh
-                        house.battery.p_ch_max_kw = db_house.battery.p_ch_max_kw
-                        house.battery.p_dis_max_kw = db_house.battery.p_dis_max_kw
-                    
-                    # Create maps for device sync
-                    db_devices_map = {d.id: d for d in db_house.devices}
-                    mem_devices_map = {d.id: d for d in house.devices}
-                    
-                    # Update existing devices from DB
-                    for db_device in db_house.devices:
-                        if db_device.id in mem_devices_map:
-                            mem_device = mem_devices_map[db_device.id]
-                            # Sync all properties from DB (DB is source of truth)
-                            mem_device.status_on = db_device.status_on
-                            mem_device.name = db_device.name
-                            mem_device.power_w = db_device.power_w
-                            mem_device.critical = db_device.critical
-                        else:
-                            # New device in DB - add to memory
-                            new_device = MemDevice(
-                                id=db_device.id,
-                                name=db_device.name,
-                                power_w=db_device.power_w,
-                                critical=db_device.critical,
-                                status_on=db_device.status_on,
-                                last_state_change_ts=db_device.last_state_change_ts,
-                                accumulated_energy_kwh=db_device.accumulated_energy_kwh
-                            )
-                            house.add_device(new_device)
-                            logger.debug(f"Added new device {db_device.id} from DB to house {house.id}")
-                    
-                    # Remove devices that no longer exist in DB
-                    for mem_device_id in list(mem_devices_map.keys()):
-                        if mem_device_id not in db_devices_map:
-                            house.remove_device(mem_device_id)
-                            logger.debug(f"Removed device {mem_device_id} from house {house.id} (deleted from DB)")
-                            
-        except Exception as e:
-            logger.warning(f"Failed to sync from DB: {e}")
-    
-    async def _persist_p2p_trades(self, internal_trades: list, sim_timestamp: datetime):
-        """
-        Persist P2P trades to database and update wallets.
-        
-        Args:
-            internal_trades: List of trade dictionaries from vpp_step
-            sim_timestamp: Simulation timestamp
-        """
-        if not internal_trades:
-            return
-        
-        try:
-            from app.db.database import get_session_context
-            from app.db.repositories.trade_transaction_repository import TradeTransactionRepository
-            from app.services.wallet_service import WalletService
-            from app.models.trading import TradeTransaction
-            
-            async with get_session_context() as session:
-                trade_repo = TradeTransactionRepository(session)
-                wallet_service = WalletService(session)
-                
-                for trade in internal_trades:
-                    seller_id = trade["from_house_id"]
-                    buyer_id = trade["to_house_id"]
-                    energy_kwh = trade["energy_kwh"]
-                    price_per_kwh = trade["price_per_kwh"]
-                    total_value = trade["total_value_lei"]
-                    grid_price = trade["grid_price_per_kwh"]
-                    
-                    # Create trade transaction record
-                    trade_obj = TradeTransaction(
-                        seller_house_id=seller_id,
-                        buyer_house_id=buyer_id,
-                        energy_kwh=energy_kwh,
-                        price_lei_kwh=price_per_kwh,
-                        total_value_lei=total_value,
-                        grid_price_lei_kwh=grid_price,
-                        sim_timestamp=sim_timestamp
-                    )
-                    await trade_repo.create(trade_obj)
-                    
-                    # Credit seller wallet
-                    await wallet_service.credit_wallet(
-                        house_id=seller_id,
-                        amount=total_value,
-                        description=f"P2P sale to House {buyer_id}: {energy_kwh:.3f} kWh @ {price_per_kwh:.2f} lei/kWh"
-                    )
-                    
-                    # Debit buyer wallet
-                    await wallet_service.debit_wallet(
-                        house_id=buyer_id,
-                        amount=total_value,
-                        description=f"P2P purchase from House {seller_id}: {energy_kwh:.3f} kWh @ {price_per_kwh:.2f} lei/kWh"
-                    )
-                
-                logger.info(f"Persisted {len(internal_trades)} P2P trades to database")
-                
-        except Exception as e:
-            logger.warning(f"Failed to persist P2P trades: {e}")
-
-
-    async def execute_step(self) -> Optional[dict]:
-        """
-        Execute one simulation step.
-        
-        Uses internal clock for time calculations:
-        - dt_h = sim_minutes_per_step / 60 (e.g., 10/60 = 0.1667 hours)
-        - Energy = Power * dt_h
-        """
-        try:
-            from app.api.state import vpp_state
-            from app.sim.vpp_step import simulate_vpp_step
-            from app.db.database import get_session_context
-            from app.db.repositories import HouseRepository, DeviceRepository
-            
-            if not vpp_state.vpp or not vpp_state.profiles:
-                logger.debug("VPP not initialized, skipping step")
-                return None
-            
-            # Sync ALL state FROM database before simulation
-            # This ensures any manual DB changes (mode, devices, etc.) are reflected
-            await self._sync_from_db()
-            
-            # Get simulation time
-            sim_hour = self.clock.hour
-            dt_h = self.clock.dt_hours  # 10 min = 0.1667 hours
-            
-            # Get price for current hour
-            price_t = vpp_state.profiles["prices_24h"][sim_hour]
-            
-            # Get PV production for current hour (interpolated by minute would be better)
-            pv_profile_kw = {}
-            for house in vpp_state.vpp.houses:
-                pv_profile_kw[house.id] = vpp_state.profiles["pv_profiles"][house.id][sim_hour]
-            
-            # Run simulation step with correct dt_h
-            result = simulate_vpp_step(
-                vpp=vpp_state.vpp,
-                pv_profile_kw=pv_profile_kw,
-                price_t=price_t,
-                dt_h=dt_h  # Use simulation time delta
-            )
-            
-            # Add metadata with simulation clock
-            result["real_timestamp"] = datetime.now().isoformat()
-            result["sim_clock"] = self.clock.to_dict()
-            result["step_number"] = self.total_steps
-            result["dt_hours"] = dt_h
-            
-            # Accumulate P2P trades and persist hourly to avoid spamming DB
-            if result.get("internal_trades"):
-                # Add to pending trades buffer
-                if not hasattr(self, '_pending_trades'):
-                    self._pending_trades = []
-                self._pending_trades.extend(result["internal_trades"])
-                
-                # Persist at the end of each hour (when minute == 50, next step is new hour)
-                if self.clock.minute == 50:
-                    # Aggregate trades by seller-buyer pair
-                    aggregated = {}
-                    for trade in self._pending_trades:
-                        key = (trade["from_house_id"], trade["to_house_id"])
-                        if key not in aggregated:
-                            aggregated[key] = {
-                                "from_house_id": trade["from_house_id"],
-                                "to_house_id": trade["to_house_id"],
-                                "energy_kwh": 0,
-                                "total_value_lei": 0,
-                                "price_per_kwh": trade["price_per_kwh"],
-                                "grid_price_per_kwh": trade["grid_price_per_kwh"],
-                            }
-                        aggregated[key]["energy_kwh"] += trade["energy_kwh"]
-                        aggregated[key]["total_value_lei"] += trade["total_value_lei"]
-                    
-                    # Persist aggregated trades
-                    aggregated_list = list(aggregated.values())
-                    if aggregated_list:
-                        await self._persist_p2p_trades(aggregated_list, self.clock.sim_datetime)
-                    
-                    # Clear buffer
-                    self._pending_trades = []
-            
-            # Store in history (keep last 1000)
-            vpp_state.simulation_history.append(result)
-            if len(vpp_state.simulation_history) > 1000:
-                vpp_state.simulation_history = vpp_state.simulation_history[-1000:]
-            
-            # Persist battery SOC and update device accumulated energy
-            # NOTE: energy_logs is populated ONLY on device toggle (event-driven)
-            # See user_api/routes/me.py toggle_my_device() for logging
-            try:
-                async with get_session_context() as session:
-                    house_repo = HouseRepository(session)
-                    device_repo = DeviceRepository(session)
-                    current_sim_time = self.clock.sim_datetime
-                    
-                    for house in vpp_state.vpp.houses:
-                        # Update battery SOC
-                        if house.battery:
-                            db_house = await house_repo.get_by_id_with_relations(house.id)
-                            if db_house and db_house.battery:
-                                db_house.battery.soc_kwh = house.battery.soc_kwh
-                        
-                        # Update accumulated_energy for devices that are ON
-                        # This updates the running total but does NOT log to energy_logs
-                        for device in house.devices:
-                            if device.status_on:
-                                db_device = await device_repo.get_by_id(device.id)
-                                
-                                # If last_state_change_ts is NULL, initialize it now
-                                if not device.last_state_change_ts:
-                                    device.last_state_change_ts = current_sim_time
-                                    if db_device:
-                                        db_device.last_state_change_ts = current_sim_time
-                                    continue
-                                
-                                # Calculate energy since last update
-                                duration = current_sim_time - device.last_state_change_ts
-                                duration_hours = duration.total_seconds() / 3600
-                                energy_kwh = device.get_power_kw() * duration_hours
-                                
-                                if energy_kwh > 0:
-                                    # Update in memory
-                                    device.accumulated_energy_kwh += energy_kwh
-                                    device.last_state_change_ts = current_sim_time
-                                    
-                                    # Update in DB (but don't log to energy_logs)
-                                    if db_device:
-                                        db_device.accumulated_energy_kwh = device.accumulated_energy_kwh
-                                        db_device.last_state_change_ts = current_sim_time
-                    
-                    # Save simulation state every 10 steps
-                    if self.total_steps % 10 == 0:
-                        from app.db.models import SimulationStateModel
-                        from sqlalchemy import select
-                        result_state = await session.execute(
-                            select(SimulationStateModel).where(SimulationStateModel.id == 1)
-                        )
-                        sim_state = result_state.scalar_one_or_none()
-                        if sim_state:
-                            sim_state.total_steps = self.total_steps
-                            sim_state.current_hour = self.clock.hour
-                            sim_state.sim_datetime = self.clock.sim_datetime
-                        else:
-                            sim_state = SimulationStateModel(
-                                id=1,
-                                total_steps=self.total_steps,
-                                current_hour=self.clock.hour,
-                                sim_datetime=self.clock.sim_datetime
-                            )
-                            session.add(sim_state)
-            except Exception as e:
-                logger.warning(f"Failed to persist to DB: {e}")
-            
-            # Advance simulation clock
-            self.clock.advance()
-            self.total_steps += 1
-            self.last_step_time = time.time()
-            self.last_result = result
-            
-            # Sync vpp_state hour with simulation clock
-            vpp_state.current_hour = self.clock.hour
-            
-            # Call callbacks
-            for callback in self._on_step_callbacks:
+            if not self.paused:
                 try:
-                    await callback(result)
+                    result = await self.step()
+                    await self.broadcast(result)
                 except Exception as e:
-                    logger.error(f"Callback error: {e}")
-            
-            logger.debug(
-                f"Step {self.total_steps}: Sim time {self.clock.time_str}, "
-                f"dt={dt_h:.4f}h, hour={sim_hour}"
-            )
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error executing simulation step: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+                    logger.exception("Simulation step failed")
+                    self.last_error = str(e)
+                    self.paused = True
+            await asyncio.sleep(self.config.tick_seconds)
 
+    def _sync(self, houses: list[HouseModel]) -> None:
+        community = community_from_houses(houses, self.config.grid, self.config.min_p2p_balance_lei)
+        ids = [h.id for h in houses]
+        self.data_source = self._resolve_data_source()
+        key = (self.day, tuple(hp.pv_kwp for hp in community.houses), self.config.p2p_price_factor, self.config.seed,
+               self.data_source)
+        rebuild_scenario = self.scenario is None or key != self.scenario_key
+        rebuild = rebuild_scenario or community != self.community or self.controller is None
 
-    def add_websocket_client(self, websocket: WebSocket):
-        """Add a WebSocket client for live updates."""
-        self._websocket_clients.append(websocket)
-        logger.info(f"WebSocket client added. Total: {len(self._websocket_clients)}")
-    
-    def remove_websocket_client(self, websocket: WebSocket):
-        """Remove a WebSocket client."""
-        if websocket in self._websocket_clients:
-            self._websocket_clients.remove(websocket)
-            logger.info(f"WebSocket client removed. Total: {len(self._websocket_clients)}")
-    
-    async def _broadcast_to_clients(self, result: dict):
-        """Send simulation result to all connected WebSocket clients."""
-        if not self._websocket_clients:
-            return
-        
-        # Enrich result with full house data for live updates
-        try:
-            from app.api.state import vpp_state
-            if vpp_state.vpp:
-                enriched_houses = []
-                for house in vpp_state.vpp.houses:
-                    house_data = house.to_dict()
-                    # Find matching house result and merge energy data
-                    for hr in result.get("houses", []):
-                        if hr["house_id"] == house.id:
-                            house_data.update({
-                                "L_crit_kw": hr["L_crit_kw"],
-                                "L_noncrit_kw": hr["L_noncrit_kw"],
-                                "L_total_kw": hr["L_total_kw"],
-                                "pv_prod_kw": hr["pv_prod_kw"],
-                                "price_zone": hr["price_zone"],
-                                # P2P trading fields
-                                "surplus_after_grid_kw": hr.get("surplus_after_grid_kw", 0),
-                                "P_from_grid_load_kw": hr.get("P_from_grid_load_kw", 0),
-                                "P_from_batt_kw": hr.get("P_from_batt_kw", 0),
-                                "P_to_grid_export_kw": hr.get("P_to_grid_export_kw", 0),
-                                "P_internal_export_kw": hr.get("P_internal_export_kw", 0),
-                                "P_internal_import_kw": hr.get("P_internal_import_kw", 0),
-                                "battery_soc_kwh": hr.get("battery_soc_kwh", 0),
-                                "battery_soc_percent": hr.get("battery_soc_percent", 0),
-                            })
-                            break
-                    enriched_houses.append(house_data)
-                result["houses"] = enriched_houses
-        except Exception as e:
-            logger.warning(f"Failed to enrich house data: {e}")
-        
-        message = {
-            "type": "step",
-            "data": result
-        }
-        
-        disconnected = []
-        for client in self._websocket_clients:
+        if community != self.community or ids != self.house_ids:
+            self.batteries = self._rebuild_batteries(houses, community)
+            self.house_ids = ids
+            self.community = community
+        if rebuild_scenario:
+            self.scenario = self._build_scenario(self.day)
+            self.scenario_key = key
+        if self.controller is None or getattr(self.controller, "name", None) != self.config.controller:
+            self.controller = make_controller(self.config.controller, self.config.seed)
+            rebuild = True
+        if rebuild:
+            self.controller.reset(self.community, self.scenario)
+
+    def _rebuild_batteries(self, houses: list[HouseModel], community: CommunityParams) -> list[Battery | None]:
+        previous = dict(zip(self.house_ids, self.batteries, strict=True))
+        batteries = []
+        for h, hp in zip(houses, community.houses, strict=True):
+            if hp.battery is None:
+                batteries.append(None)
+                continue
+            prev = previous.get(h.id)
+            soc = prev.soc_kwh if prev is not None else h.battery.soc_kwh
+            soc = min(max(soc, hp.battery.soc_min_kwh), hp.battery.soc_max_kwh)
+            batteries.append(Battery(hp.battery, soc))
+        return batteries
+
+    def _build_scenario(self, day: date) -> Scenario:
+        """PV and prices for today and tomorrow, each day generated with its own date-based seed and
+        concatenated, so the day the MPC looks ahead to is exactly the one simulated tomorrow. The load
+        columns start empty: _apply_device_load fills them from the devices before every step."""
+        parts = []
+        for d in self.window_days:
+            seed = self.config.seed + d.toordinal()
+            if self.data_source == "real":
+                part = generate_scenario_real(self.community, start=data_day(d, self.data_year), n_days=1,
+                                              dt_h=self.dt_h, seed=seed, p2p_price_factor=self.config.p2p_price_factor,
+                                              load_source="deer")
+            else:
+                part = generate_scenario(self.community, start=d, n_days=1, dt_h=self.dt_h, seed=seed,
+                                         p2p_price_factor=self.config.p2p_price_factor, load_source="sintetic")
+            parts.append(part)
+
+        def cat(name: str) -> np.ndarray:
+            return np.concatenate([getattr(p, name) for p in parts], axis=-1)
+
+        empty = np.zeros((self.community.n_houses, 2 * self.steps_per_day))
+        return Scenario(
+            dt_h=self.dt_h, start=day, pv_kw=cat("pv_kw"), load_crit_kw=empty, load_flex_kw=empty.copy(),
+            price_import=cat("price_import"), price_export=cat("price_export"), price_p2p=cat("price_p2p"),
+            seed=parts[0].seed,
+        )
+
+    def _apply_device_load(self, houses: list[HouseModel]) -> None:
+        """Scenario load over the window = the switched-on devices as they are now (the MPC forecast
+        assumes they keep their state); written in place so the controller sees it without a reset."""
+        days = self.window_days
+        self.profiles.keep_days(days)
+        sc, kw = self.scenario, {}
+        for i, h in enumerate(houses):
+            kw.update(self.profiles.device_kw(h, days, self.config.seed))
+            sc.load_crit_kw[i], sc.load_flex_kw[i] = house_load(h, kw, sc.n_steps)
+        self.device_kw = kw
+
+    async def step(self) -> dict:
+        async with self.lock:
+            return await self._step()
+
+    async def _step(self) -> dict:
+        async with get_session_context() as session:
+            houses = await HouseRepository(session).get_all_with_relations()
+            if not houses:
+                raise RuntimeError("nu exista case in baza de date")
+            self._sync(houses)
+            self._apply_device_load(houses)
+            inputs = self._step_inputs()
+            dispatch = await self._dispatch()
+            soc_before = [b.soc_kwh if b else None for b in self.batteries]
             try:
-                await client.send_json(message)
+                self._apply_to_batteries(dispatch)
+                trades = self._split_trades(dispatch, houses, inputs)
+                settled = await self._persist(session, houses, inputs, dispatch, trades)
             except Exception:
-                disconnected.append(client)
-        
-        for client in disconnected:
-            self.remove_websocket_client(client)
-    
-    def add_callback(self, callback: Callable):
-        """Add a callback to be called after each step."""
-        self._on_step_callbacks.append(callback)
-    
-    def get_status(self) -> dict:
-        """Get current simulation status."""
+                for b, soc in zip(self.batteries, soc_before, strict=True):
+                    if b is not None:
+                        b.soc_kwh = soc
+                raise
+        result = self._result(houses, inputs, dispatch, settled)
+        self._advance_clock(result)
+        return result
+
+    def _step_inputs(self) -> StepInputs:
+        sc, t = self.scenario, self.t
+        p_imp, p_exp, p_p2p = self.current_prices()
+        return StepInputs(t=t, pv_kw=sc.pv_kw[:, t].copy(), load_kw=sc.load_kw[:, t].copy(),
+                          price_import=p_imp, price_export=p_exp, price_p2p=p_p2p)
+
+    async def _dispatch(self) -> Dispatch:
+        state = SimState(t=self.t, batteries=self.batteries)
+        dispatch: Dispatch = await asyncio.to_thread(self.controller.dispatch, state)   # MPC solves an LP
+        validate(dispatch, self.community, self.scenario, self.t)
+        for name in FLOWS:
+            setattr(dispatch, name, np.clip(getattr(dispatch, name), 0, None))
+        return dispatch
+
+    def _apply_to_batteries(self, dispatch: Dispatch) -> None:
+        for i, battery in enumerate(self.batteries):
+            if battery is not None:
+                battery.apply(dispatch.ch[i], dispatch.dis[i], self.dt_h)
+
+    def _split_trades(self, dispatch: Dispatch, houses: list[HouseModel], inputs: StepInputs) -> list[Trade]:
+        """Seller -> buyer trades, pro rata to what each seller sold."""
+        sold, bought = dispatch.p2p_out * self.dt_h, dispatch.p2p_in * self.dt_h
+        total_sold = float(sold.sum())
+        if total_sold <= EPS:
+            return []
+        trades = []
+        for j, bought_j in enumerate(bought):
+            if bought_j <= EPS:
+                continue
+            for i, sold_i in enumerate(sold):
+                share = sold_i * bought_j / total_sold
+                if i != j and share >= MIN_TRADE_KWH:
+                    trades.append(Trade(houses[i].id, houses[j].id, float(share),
+                                        inputs.price_p2p, inputs.price_import))
+        return trades
+
+    async def _persist(self, session: AsyncSession, houses: list[HouseModel], inputs: StepInputs,
+                       d: Dispatch, trades: list[Trade]) -> list[TradeTransactionModel]:
+        """All DB writes of the step; the caller's session commits them together."""
+        sim_ts, dt = self.sim_datetime, self.dt_h
+        for i, h in enumerate(houses):
+            battery = self.batteries[i]
+            if h.battery is not None and battery is not None:
+                h.battery.soc_kwh = battery.soc_kwh
+            load = float(inputs.load_kw[i])
+            session.add(HouseStepModel(
+                house_id=h.id, sim_timestamp=sim_ts, dt_h=dt, controller=self.config.controller,
+                pv_kw=float(inputs.pv_kw[i]), load_kw=load, device_kw=load,
+                shed_kw=float(d.shed[i]), curtail_kw=float(d.curtail[i]), ch_kw=float(d.ch[i]), dis_kw=float(d.dis[i]),
+                imp_kw=float(d.imp[i]), exp_kw=float(d.exp[i]), p2p_in_kw=float(d.p2p_in[i]),
+                p2p_out_kw=float(d.p2p_out[i]), soc_kwh=battery.soc_kwh if battery else 0.0,
+                price_import=inputs.price_import, price_export=inputs.price_export, price_p2p=inputs.price_p2p,
+            ))
+            for dev in h.devices:
+                power = float(self.device_kw[dev.id][inputs.t]) if dev.status_on else 0.0
+                if dev.current_power_kw != power:
+                    dev.current_power_kw = power
+                energy = power * dt
+                if energy > 0:
+                    dev.accumulated_energy_kwh = round(dev.accumulated_energy_kwh + energy, 6)
+                    session.add(EnergyLogModel(device_id=dev.id, timestamp=sim_ts, energy_kwh=energy,
+                                               event_type="step"))
+        settled = await SettlementService(session).settle_trades(trades, sim_ts)
+        next_day, next_t = self._next_clock()
+        await self._save_state(session, total_steps=self.total_steps + 1, sim_datetime=self._clock_at(next_day, next_t))
+        return settled
+
+    async def _save_state(self, session: AsyncSession, **fields) -> None:
+        state = await session.get(SimulationStateModel, 1)
+        if state is None:
+            state = SimulationStateModel(id=1, total_steps=self.total_steps, sim_datetime=self.sim_datetime)
+            session.add(state)
+        state.config_json = json.dumps(self.config.to_dict())
+        for name, value in fields.items():
+            setattr(state, name, value)
+        await session.flush()
+
+    def _result(self, houses: list[HouseModel], inputs: StepInputs, d: Dispatch,
+                settled: list[TradeTransactionModel]) -> dict:
+        rows = []
+        for i, h in enumerate(houses):
+            soc = self.batteries[i].soc_kwh if self.batteries[i] else 0.0
+            cap = h.battery.capacity_kwh if h.battery else 0.0
+            rows.append({
+                "id": h.id, "name": h.name, "mode": h.mode, "p2p_enabled": self.community.houses[i].p2p_enabled,
+                "pv_kw": round(float(inputs.pv_kw[i]), 3), "load_kw": round(float(inputs.load_kw[i]), 3),
+                "device_kw": round(float(inputs.load_kw[i]), 3), "shed_kw": round(float(d.shed[i]), 3),
+                "curtail_kw": round(float(d.curtail[i]), 3), "ch_kw": round(float(d.ch[i]), 3),
+                "dis_kw": round(float(d.dis[i]), 3), "imp_kw": round(float(d.imp[i]), 3),
+                "exp_kw": round(float(d.exp[i]), 3), "p2p_in_kw": round(float(d.p2p_in[i]), 3),
+                "p2p_out_kw": round(float(d.p2p_out[i]), 3), "soc_kwh": round(soc, 3),
+                "soc_percent": round(100 * soc / cap, 1) if cap else None,
+            })
+        socs = [b.soc_kwh for b in self.batteries if b]
+        caps = [hp.battery.capacity_kwh for hp in self.community.houses if hp.battery]
+        return {
+            "step": self.total_steps + 1,
+            "sim_datetime": self.sim_datetime.isoformat(),
+            "dt_h": self.dt_h,
+            "controller": self.config.controller,
+            "data_source": self.data_source,
+            "price": {"import": round(inputs.price_import, 4), "export": round(inputs.price_export, 4),
+                      "p2p": round(inputs.price_p2p, 4)},
+            "community": {
+                "pv_kw": round(float(inputs.pv_kw.sum()), 3), "load_kw": round(float(inputs.load_kw.sum()), 3),
+                "device_kw": round(float(inputs.load_kw.sum()), 3), "shed_kw": round(float(d.shed.sum()), 3),
+                "curtail_kw": round(float(d.curtail.sum()), 3), "charge_kw": round(float(d.ch.sum()), 3),
+                "discharge_kw": round(float(d.dis.sum()), 3), "import_kw": round(float(d.imp.sum()), 3),
+                "export_kw": round(float(d.exp.sum()), 3), "p2p_kw": round(float(d.p2p_out.sum()), 3),
+                "soc_kwh": round(sum(socs), 3), "soc_percent": round(100 * sum(socs) / sum(caps), 1) if caps else None,
+            },
+            "houses": rows,
+            "trades": [{
+                "seller_house_id": tr.seller_house_id, "buyer_house_id": tr.buyer_house_id,
+                "energy_kwh": round(tr.energy_kwh, 4), "price_lei_kwh": round(tr.price_lei_kwh, 4),
+                "total_value_lei": round(tr.total_value_lei, 4), "status": tr.status,
+            } for tr in settled],
+        }
+
+    def _advance_clock(self, result: dict) -> None:
+        self.total_steps += 1
+        self.day, self.t = self._next_clock()
+        self.history.append(result)
+        self.last_result = result
+        self.last_error = None
+
+    async def apply_config(self, cfg: SimConfig) -> None:
+        cfg.check()
+        async with self.lock:
+            self.config = cfg
+            async with get_session_context() as session:
+                await self._save_state(session)
+                houses = await HouseRepository(session).get_all_with_relations()
+                if houses:
+                    self._sync(houses)
+
+    async def withdraw_from_battery(self, house_id: int, energy_kwh: float) -> tuple[float, float, WalletModel]:
+        """Returns (payment_lei, new_soc_kwh, house wallet); ValueError messages are shown to the user."""
+        async with self.lock:
+            if house_id not in self.house_ids:
+                raise ValueError("casa nu exista in simulare")
+            battery = self.batteries[self.house_ids.index(house_id)]
+            if battery is None:
+                raise ValueError("casa nu are baterie")
+            available = battery.soc_kwh - battery.params.soc_min_kwh
+            if energy_kwh > available + EPS:
+                raise ValueError(f"energie insuficienta in baterie: disponibil {available:.2f} kWh")
+            async with get_session_context() as session:
+                payment, wallet = await SettlementService(session).pay_reserve_contribution(
+                    house_id, energy_kwh, self.sim_datetime)
+                await session.execute(update(BatteryModel).where(BatteryModel.house_id == house_id)
+                                      .values(soc_kwh=battery.soc_kwh - energy_kwh))
+            battery.soc_kwh -= energy_kwh
+            return payment, battery.soc_kwh, wallet
+
+    async def reset(self) -> None:
+        async with self.lock:
+            start_ts = datetime.combine(settings.sim_start_date, datetime.min.time())
+            async with get_session_context() as session:
+                for model in (HouseStepModel, EnergyLogModel, TradeTransactionModel, WalletTransactionModel):
+                    await session.execute(delete(model))
+                await session.execute(update(DeviceModel).values(accumulated_energy_kwh=0.0, current_power_kw=0.0,
+                                                                 last_state_change_ts=None))
+                await session.execute(update(VPPReserveModel).values(reserved_kwh=0.0))
+                for b in (await session.execute(select(BatteryModel))).scalars():
+                    b.soc_kwh = max(0.5 * b.capacity_kwh, b.soc_min_kwh)
+                for w in (await session.execute(select(WalletModel))).scalars():
+                    amount = settings.operator_wallet_lei if w.house_id is None else settings.initial_wallet_lei
+                    w.balance_lei, w.total_earned_lei, w.total_spent_lei, w.transaction_count = amount, 0.0, 0.0, 1
+                    session.add(WalletTransactionModel(wallet_id=w.id, transaction_type="initial", amount_lei=amount,
+                                                       description="Sold initial", balance_after=amount,
+                                                       sim_timestamp=start_ts))
+                await self._save_state(session, total_steps=0, sim_datetime=start_ts)
+                houses = await HouseRepository(session).get_all_with_relations()
+            self.day, self.t, self.total_steps = settings.sim_start_date, 0, 0
+            self.history.clear()
+            self.last_result = None
+            self.last_error = None
+            self.batteries, self.house_ids, self.community, self.scenario = [], [], None, None
+            if houses:
+                self._sync(houses)
+
+    def status(self) -> dict:
+        ts = self.sim_datetime
         return {
             "running": self.running,
             "paused": self.paused,
+            "loaded": self.loaded,
+            "controller": self.config.controller,
+            "data_source": self.data_source,
+            "data_year": self.data_year,
+            "tick_seconds": self.config.tick_seconds,
+            "dt_hours": self.dt_h,
             "total_steps": self.total_steps,
-            "interval_seconds": self.interval_seconds,
-            "sim_minutes_per_step": self.sim_minutes_per_step,
-            "last_step_time": self.last_step_time,
-            "websocket_clients": len(self._websocket_clients),
-            "clock": self.clock.to_dict()
+            "sim_datetime": ts.isoformat(),
+            "sim_date": ts.date().isoformat(),
+            "sim_time": ts.strftime("%H:%M"),
+            "step_of_day": self.t,
+            "steps_per_day": self.steps_per_day,
+            "n_houses": len(self.house_ids),
+            "last_error": self.last_error,
+            "websocket_clients": len(self._ws_clients),
         }
-    
-    def set_total_steps(self, steps: int):
-        """
-        Set total steps and synchronize the simulation clock.
-        
-        This recalculates the simulation datetime based on the new step count.
-        """
-        self.total_steps = steps
-        
-        # Recalculate simulation time based on steps
-        total_sim_minutes = steps * self.sim_minutes_per_step
-        self.clock.total_sim_minutes = total_sim_minutes
-        
-        # Reset clock to start datetime and advance to correct position
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        self.clock.sim_datetime = today + timedelta(minutes=total_sim_minutes)
-        
-        # Sync vpp_state if available
-        try:
-            from app.api.state import vpp_state
-            vpp_state.current_hour = self.clock.hour
-        except Exception:
-            pass
-        
-        logger.info(f"Total steps set to {steps}, sim time: {self.clock.time_str}")
+
+    def prices_today(self) -> list[dict]:
+        if self.scenario is None:
+            return []
+        sc = self.scenario
+        return [{
+            "sim_timestamp": self._clock_at(self.day, t).isoformat(),
+            "price_import": round(float(sc.price_import[t]), 4),
+            "price_export": round(float(sc.price_export[t]), 4),
+            "price_p2p": round(float(sc.price_p2p[t]), 4),
+        } for t in range(self.steps_per_day)]
+
+    def house_last_step(self, house_id: int) -> dict | None:
+        if not self.last_result:
+            return None
+        return next((h for h in self.last_result["houses"] if h["id"] == house_id), None)
+
+    def add_ws(self, ws) -> None:
+        self._ws_clients.append(ws)
+
+    def remove_ws(self, ws) -> None:
+        if ws in self._ws_clients:
+            self._ws_clients.remove(ws)
+
+    async def broadcast(self, result: dict) -> None:
+        if not self._ws_clients:
+            return
+        message = {"type": "step", "data": result, "status": self.status()}
+        for ws in list(self._ws_clients):
+            try:
+                await ws.send_json(message)
+            except Exception:
+                self.remove_ws(ws)
 
 
-# Global simulation loop instance
-# 5 sec real = 10 min simulation
-simulation_loop = SimulationLoop(interval_seconds=5.0, sim_minutes_per_step=10)
+sim = SimulationLoop()

@@ -2,19 +2,19 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 pydantic==2.13.5
-python-multipart==0.0.32
 python-dotenv==1.2.3
-pandas==3.0.5
-requests==2.34.2
 SQLAlchemy[asyncio]==2.0.52
-aiomysql==0.3.2
-PyMySQL==1.2.0
+aiosqlite==0.22.1
 greenlet==3.5.5
 
 # Autentificare
-python-jose[cryptography]==3.5.0
+PyJWT==2.10.1
 bcrypt==5.0.0
 
 # Nucleu de simulare si optimizare
 numpy==2.4.6
 highspy==1.15.1
+matplotlib==3.10.6
+
+# Doar pentru regenerarea datelor reale (python -m vpp_core.data_sources --fetch)
+openpyxl==3.1.5

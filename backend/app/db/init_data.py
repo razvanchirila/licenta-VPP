@@ -1,218 +1,85 @@
-"""Database initialization and seeding script for VPP Simulator."""
-import asyncio
-import logging
-import random
-from typing import List, Optional
+from __future__ import annotations
 
+import logging
+from datetime import datetime
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import init_db, get_session_context, close_db
+from app.settings import settings
+from vpp_core.load_model import DISPOZITIVE_CSV, Appliance, by_house, format_interval, load_appliances
+from vpp_core.params import CommunityParams, default_community
+
 from .models import (
-    HouseModel, BatteryModel, DeviceModel,
-    TradingPreferencesModel, WalletModel, VPPReserveModel
+    BatteryModel,
+    DeviceModel,
+    HouseModel,
+    TradingPreferencesModel,
+    VPPReserveModel,
+    WalletModel,
+    WalletTransactionModel,
 )
-from .repositories import HouseRepository, DeviceRepository
 
 logger = logging.getLogger(__name__)
 
 
-# Default device templates - NO LONGER USED (devices are added manually by users)
-# Kept for reference only
-DEFAULT_DEVICES = [
-    {"name": "Frigider", "power_w": 150.0, "critical": True, "status_on": True},
-    {"name": "Router", "power_w": 10.0, "critical": True, "status_on": True},
-    {"name": "TV", "power_w": 100.0, "critical": False, "status_on": False},
-    {"name": "Mașină spălat", "power_w": 1500.0, "critical": False, "status_on": False},
-    {"name": "Iluminat", "power_w": 200.0, "critical": False, "status_on": False},
-]
+def _initial_tx(wallet: WalletModel, amount: float, sim_ts: datetime) -> WalletTransactionModel:
+    return WalletTransactionModel(
+        wallet=wallet, transaction_type="initial", amount_lei=amount, description="Sold initial",
+        balance_after=amount, sim_timestamp=sim_ts,
+    )
 
 
-async def seed_houses(
-    session: AsyncSession,
-    num_houses: int = 10,
-    houses_with_battery_ratio: float = 0.8,
-    create_default_devices: bool = False  # NEW: disabled by default
-) -> List[HouseModel]:
-    """
-    Seed the database with initial houses and batteries only.
-    Devices are NOT created automatically - users add them manually.
-    
-    Args:
-        session: Database session
-        num_houses: Number of houses to create
-        houses_with_battery_ratio: Ratio of houses with batteries
-        create_default_devices: If True, create default devices (disabled by default)
-    
-    Returns:
-        List of created house models
-    """
-    house_repo = HouseRepository(session)
-    
-    # Check if houses already exist - NEVER overwrite existing data
-    existing_houses = await house_repo.get_all()
-    if existing_houses:
-        logger.info(f"Database already has {len(existing_houses)} houses, preserving existing data")
-        return existing_houses
-    
-    num_with_battery = int(num_houses * houses_with_battery_ratio)
-    houses = []
-    
-    logger.info(f"Seeding {num_houses} houses ({num_with_battery} with batteries), NO default devices...")
+def device_from_appliance(house: HouseModel, app: Appliance) -> DeviceModel:
+    return DeviceModel(
+        house=house, name=app.dispozitiv, power_w=app.putere_w, critical=not app.flexibil, status_on=True,
+        mode=app.mod, hours_per_day=app.ore_pe_zi, cycles_per_week=app.cicluri_pe_saptamana,
+        cycle_minutes=app.durata_ciclu_min, interval=format_interval(app.interval), season=app.sezon,
+    )
 
-    for i in range(1, num_houses + 1):
-        # Create house
-        house = HouseModel(
-            id=i,
-            name=f"Casa {i}",
-            mode=random.choice(["Eco", "Profit"]),
-            has_pv=True,
-            pv_capacity_kw=10.0
-        )
+
+def _appliances_by_house() -> dict[int, list[Appliance]]:
+    if not DISPOZITIVE_CSV.exists():
+        logger.warning("%s lipseste: casele pornesc fara dispozitive", DISPOZITIVE_CSV)
+        return {}
+    return by_house(load_appliances(DISPOZITIVE_CSV))
+
+
+async def seed_houses(session: AsyncSession, community: CommunityParams | None = None) -> list[HouseModel]:
+    """Idempotent: nothing happens when houses already exist."""
+    existing = (await session.execute(select(HouseModel))).scalars().all()
+    if existing:
+        return list(existing)
+
+    community = community or default_community()
+    appliances = _appliances_by_house()
+    sim_ts = datetime.combine(settings.sim_start_date, datetime.min.time())
+    houses, n_devices = [], 0
+    for hp in community.houses:
+        house = HouseModel(id=hp.id, name=f"Casa {hp.id}", mode=hp.mode, has_pv=hp.pv_kwp > 0, pv_capacity_kw=hp.pv_kwp)
         session.add(house)
-        await session.flush()
-        
-        # Create battery if in the first N houses
-        if i <= num_with_battery:
-            battery = BatteryModel(
-                house_id=house.id,
-                capacity_kwh=20.0,
-                soc_kwh=10.0,  # 50% initial SOC
-                soc_min_kwh=4.0,  # 20% of capacity
-                soc_max_kwh=20.0,
-                p_ch_max_kw=5.0,
-                p_dis_max_kw=5.0
-            )
-            session.add(battery)
-        
-        # Create default trading preferences for P2P trading
-        trading_prefs = TradingPreferencesModel(
-            house_id=house.id,
-            selling_enabled=True,
-            buying_enabled=True,
-            price_mode="discount",
-            fixed_price_lei_kwh=None,
-            discount_percent=20.0,
-            min_sell_price_lei_kwh=0.0
-        )
-        session.add(trading_prefs)
-        
-        # Create wallet for P2P trading credits
-        wallet = WalletModel(
-            house_id=house.id,
-            balance_lei=0.0,
-            total_earned_lei=0.0,
-            total_spent_lei=0.0,
-            transaction_count=0,
-            is_flagged=False
-        )
+        for app in appliances.get(hp.id, []):
+            session.add(device_from_appliance(house, app))
+            n_devices += 1
+        if hp.battery:
+            b = hp.battery
+            session.add(BatteryModel(
+                house=house, capacity_kwh=b.capacity_kwh, soc_kwh=hp.initial_soc_kwh, soc_min_kwh=b.soc_min_kwh,
+                p_ch_max_kw=b.p_ch_max_kw, p_dis_max_kw=b.p_dis_max_kw, eta_ch=b.eta_ch, eta_dis=b.eta_dis,
+            ))
+        session.add(TradingPreferencesModel(house=house, selling_enabled=hp.p2p_enabled, buying_enabled=hp.p2p_enabled))
+        wallet = WalletModel(house=house, balance_lei=settings.initial_wallet_lei, transaction_count=1)
         session.add(wallet)
-        
-        # Create VPP reserve entry
-        vpp_reserve = VPPReserveModel(
-            house_id=house.id,
-            reserved_kwh=0.0,
-            base_rate_lei_kwh=0.5,
-            pending_bonus_lei=0.0
-        )
-        session.add(vpp_reserve)
-        
-        # Only create default devices if explicitly requested
-        if create_default_devices:
-            for idx, device_template in enumerate(DEFAULT_DEVICES, start=1):
-                device = DeviceModel(
-                    house_id=house.id,
-                    name=device_template["name"],
-                    power_w=device_template["power_w"],
-                    critical=device_template["critical"],
-                    status_on=device_template["status_on"],
-                    accumulated_energy_kwh=0.0,
-                    last_state_change_ts=None
-                )
-                session.add(device)
-        
+        session.add(_initial_tx(wallet, settings.initial_wallet_lei, sim_ts))
+        session.add(VPPReserveModel(house=house))
         houses.append(house)
-        
-        # Log progress every 100 houses
-        if i % 100 == 0:
-            logger.info(f"Created {i}/{num_houses} houses...")
-    
+
+    operator = (await session.execute(select(WalletModel).where(WalletModel.house_id.is_(None)))).scalar_one_or_none()
+    if operator is None:
+        operator = WalletModel(house_id=None, balance_lei=settings.operator_wallet_lei, transaction_count=1)
+        session.add(operator)
+        session.add(_initial_tx(operator, settings.operator_wallet_lei, sim_ts))
+
     await session.flush()
-    logger.info(f"Successfully seeded {num_houses} houses (devices: {'yes' if create_default_devices else 'no'})")
-    
+    logger.info("Seeded %d houses, %d devices", len(houses), n_devices)
     return houses
-
-
-async def clear_all_data(session: AsyncSession) -> None:
-    """Clear all data from the database (for testing/reset)."""
-    from sqlalchemy import text
-    
-    # Delete in order to respect foreign keys
-    await session.execute(text("DELETE FROM wallet_transactions"))
-    await session.execute(text("DELETE FROM trade_transactions"))
-    await session.execute(text("DELETE FROM wallets"))
-    await session.execute(text("DELETE FROM trading_preferences"))
-    await session.execute(text("DELETE FROM vpp_reserve"))
-    await session.execute(text("DELETE FROM energy_logs"))
-    await session.execute(text("DELETE FROM devices"))
-    await session.execute(text("DELETE FROM batteries"))
-    await session.execute(text("DELETE FROM houses"))
-    await session.flush()
-    logger.info("Cleared all data from database")
-
-
-async def initialize_database(
-    num_houses: int = 10,
-    houses_with_battery_ratio: float = 0.8,
-    force_reseed: bool = False
-) -> None:
-    """
-    Initialize database and seed with initial data.
-    
-    Args:
-        num_houses: Number of houses to create
-        houses_with_battery_ratio: Ratio of houses with batteries
-        force_reseed: If True, clear existing data and reseed
-    """
-    # Create tables
-    await init_db()
-    
-    async with get_session_context() as session:
-        if force_reseed:
-            await clear_all_data(session)
-        
-        await seed_houses(
-            session,
-            num_houses=num_houses,
-            houses_with_battery_ratio=houses_with_battery_ratio
-        )
-
-
-def run_init_sync(
-    num_houses: int = 10,
-    houses_with_battery_ratio: float = 0.8,
-    force_reseed: bool = False
-) -> None:
-    """Synchronous wrapper for database initialization."""
-    asyncio.run(initialize_database(
-        num_houses=num_houses,
-        houses_with_battery_ratio=houses_with_battery_ratio,
-        force_reseed=force_reseed
-    ))
-
-
-if __name__ == "__main__":
-    import sys
-    
-    logging.basicConfig(level=logging.INFO)
-    
-    # Parse command line arguments
-    force = "--force" in sys.argv
-    num_houses = 10  # Default: 10 houses (8 with batteries)
-    
-    for arg in sys.argv[1:]:
-        if arg.startswith("--houses="):
-            num_houses = int(arg.split("=")[1])
-    
-    print(f"Initializing database with {num_houses} houses...")
-    run_init_sync(num_houses=num_houses, force_reseed=force)
-    print("Done!")
