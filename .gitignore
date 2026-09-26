@@ -12,7 +12,11 @@ build/
 
 # Date locale
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
+backend/vpp.db
+backend/data/raw/
 *.log
 
 # Secrete
@@ -32,3 +36,7 @@ Thumbs.db
 /mobile/macos
 mobile/windows/flutter/generated_plugin_registrant.*
 mobile/windows/flutter/generated_plugins.cmake
+
+
+# rezultate de evaluare (se adauga in repo cand sunt finale)
+results/

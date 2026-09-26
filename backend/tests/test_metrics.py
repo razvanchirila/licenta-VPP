@@ -1,8 +1,8 @@
 from datetime import date
 
 import pytest
-
 from conftest import const, make_scenario
+
 from vpp_core.controllers import RuleBasedController
 from vpp_core.experiments import baseline_controllers
 from vpp_core.metrics import compute_metrics

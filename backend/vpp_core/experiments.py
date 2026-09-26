@@ -1,6 +1,4 @@
-"""
-Baseline comparison. Run from vpp_simulator/:  python -m vpp_core.experiments
-"""
+"""Quick comparison of all strategies on a summer and a winter week:  python -m vpp_core.experiments"""
 from __future__ import annotations
 
 from datetime import date
@@ -33,17 +31,18 @@ COLUMNS = [
 
 def print_table(rows: list[dict]) -> None:
     print("  ".join(f"{name:>{len(fmt.format(0)) if name != 'controller' else 24}}" for name, fmt in COLUMNS))
-    for r in rows:
-        print("  ".join(fmt.format(r[name]) for name, fmt in COLUMNS))
+    for row in rows:
+        print("  ".join(fmt.format(row[name]) for name, fmt in COLUMNS))
 
 
 def main() -> None:
     community = default_community()
     for label, start in (("Vara (iunie)", date(2025, 6, 1)), ("Iarna (ianuarie)", date(2025, 1, 10))):
-        sc = generate_scenario(community, start=start, n_days=7, dt_h=0.25, seed=42)
+        scenario = generate_scenario(community, start=start, n_days=7, dt_h=0.25, seed=42)
         print(f"\n{label}: 7 zile, 10 case, pas 15 min, seed 42")
         controllers = baseline_controllers() + [MPCController(), LPController()]
-        print_table([compute_metrics(simulate(community, sc, c))["community"] for c in controllers])
+        rows = [compute_metrics(simulate(community, scenario, controller))["community"] for controller in controllers]
+        print_table(rows)
 
 
 if __name__ == "__main__":

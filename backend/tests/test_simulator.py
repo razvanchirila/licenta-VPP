@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-
 from conftest import const, make_scenario
+
 from vpp_core.controllers import Controller
 from vpp_core.dispatch import Dispatch
 from vpp_core.params import BatteryParams, CommunityParams, GridParams, HouseParams
@@ -22,7 +22,9 @@ class Fixed(Controller):
 
 def community(n=2, battery=False, grid=GridParams(), p2p=True):
     return CommunityParams(
-        houses=tuple(HouseParams(id=i, battery=BatteryParams() if battery else None, p2p_enabled=p2p) for i in range(n)),
+        houses=tuple(
+            HouseParams(id=i, battery=BatteryParams() if battery else None, p2p_enabled=p2p) for i in range(n)
+        ),
         grid=grid,
     )
 

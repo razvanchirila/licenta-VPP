@@ -1,0 +1,115 @@
+"""Shared pieces of evaluation.py and pareto.py: seasons, scenario factory, parallel runner, CSV, CLI, chart style."""
+from __future__ import annotations
+
+import argparse
+import csv
+import time
+from collections.abc import Callable, Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import date
+from pathlib import Path
+
+from vpp_core.optimizer import LPWeights
+from vpp_core.params import CommunityParams, default_community
+from vpp_core.scenario import Scenario, generate_scenario
+from vpp_core.scenario_real import generate_scenario_real
+
+RESULTS_DIR = Path(__file__).resolve().parents[2] / "results"
+RESULTS_REAL_DIR = RESULTS_DIR / "real"
+
+# key, chart label, first day of the simulated week
+SEASONS = (
+    ("iarna", "Iarnă", date(2025, 1, 10)),
+    ("primavara", "Primăvară", date(2025, 4, 10)),
+    ("vara", "Vară", date(2025, 7, 10)),
+    ("toamna", "Toamnă", date(2025, 10, 10)),
+)
+SEASON_LABELS = {key: label for key, label, _ in SEASONS}
+# same weeks in 2023, the only year covered by all three real data sources
+SEASON_STARTS_REAL = {"iarna": date(2023, 1, 10), "primavara": date(2023, 4, 10),
+                      "vara": date(2023, 7, 10), "toamna": date(2023, 10, 10)}
+
+COLORS = {
+    "fara_baterie": "#2a78d6", "baterie_locala": "#eb6834", "vpp_reguli": "#1baf7a",
+    "mpc": "#eda100", "mpc_varf": "#e87ba4", "optim_lp": "#008300",
+}
+INK, MUTED, GRID = "#0b0b0b", "#898781", "#e1e0d9"
+
+
+def season_index(key: str) -> int:
+    return [k for k, _, _ in SEASONS].index(key)
+
+
+def make_scenario(
+    season: str, seed: int, n_days: int, dt_h: float, real: bool, community: CommunityParams | None = None
+) -> Scenario:
+    community = default_community() if community is None else community
+    if real:
+        return generate_scenario_real(community, start=SEASON_STARTS_REAL[season], n_days=n_days, dt_h=dt_h, seed=seed)
+    start = next(s for k, _, s in SEASONS if k == season)
+    return generate_scenario(community, start=start, n_days=n_days, dt_h=dt_h, seed=seed)
+
+
+def weights(deg_cost: float | None = None, **overrides) -> LPWeights:
+    return LPWeights(**overrides) if deg_cost is None else LPWeights(deg_cost=deg_cost, **overrides)
+
+
+def run_parallel(run_one: Callable, tasks: Sequence, describe: Callable[[dict], str], workers: int | None) -> list:
+    """Results come back in completion order; workers=0 runs in-process (tests)."""
+    results, t0 = [], time.perf_counter()
+    if workers == 0:
+        return [run_one(task) for task in tasks]
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(run_one, task) for task in tasks]
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            print(f"[{i:3d}/{len(tasks)}] {describe(result)}", flush=True)
+            results.append(result)
+    print(f"{len(tasks)} simulari in {time.perf_counter() - t0:.0f} s")
+    return results
+
+
+def format_value(value):
+    return f"{value:.6g}" if isinstance(value, float) else value
+
+
+def write_csv(rows: list[dict], keys: list[str], path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=keys, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: format_value(row[key]) for key in keys})
+
+
+def add_common_arguments(parser: argparse.ArgumentParser, default_seeds: int) -> None:
+    parser.add_argument("--seeds", type=int, default=default_seeds, help="numar de seed-uri (0 .. N-1)")
+    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--dt", type=float, default=0.25, help="pasul de timp in ore")
+    parser.add_argument("--workers", type=int, default=None, help="procese in paralel (implicit: toate nucleele)")
+    parser.add_argument("--out", type=Path, default=None, help="implicit results/ (sau results/real/ cu --real)")
+    parser.add_argument(
+        "--real", action="store_true", help="scenariu din date reale 2023 (PVGIS, PZU Ember, profil DEER)"
+    )
+    parser.add_argument(
+        "--deg", type=float, default=None, help="cost de degradare baterie lei/kWh pentru LP/MPC (implicit LPWeights)"
+    )
+
+
+def output_dir(args: argparse.Namespace) -> Path:
+    out = args.out if args.out is not None else (RESULTS_REAL_DIR if args.real else RESULTS_DIR)
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def plot_style():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "font.family": "sans-serif", "font.size": 9, "axes.edgecolor": MUTED, "axes.labelcolor": INK,
+        "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True, "axes.axisbelow": True,
+        "grid.color": GRID, "grid.linewidth": 0.6, "xtick.color": MUTED, "ytick.color": MUTED,
+        "xtick.labelcolor": INK, "ytick.labelcolor": INK, "legend.frameon": False, "figure.dpi": 150,
+        "savefig.dpi": 150,
+    })
+    return plt

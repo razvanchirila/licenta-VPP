@@ -1,10 +1,4 @@
-"""
-Control strategies. A controller only decides; the simulator checks and applies.
-
-RuleBasedController is the competition algorithm (inceput2.md) with its bugs fixed.
-With some features switched off it also gives the reference baselines
-(no battery, battery without VPP, ...), see experiments.baseline_controllers().
-"""
+"""Controller interface and the rule-based strategy (LP / MPC are in optimizer.py)."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -14,8 +8,9 @@ import numpy as np
 from vpp_core.dispatch import Dispatch
 from vpp_core.params import CommunityParams
 from vpp_core.scenario import Scenario
+from vpp_core.simulator import SimState
 
-# Share of the non-critical load that is kept, per mode and price zone (inceput2.md §5)
+# share of the flexible load that is kept, per user mode and price zone
 ALPHA = {
     "Eco": {"cheap": 1.0, "normal": 0.6, "expensive": 0.3},
     "Profit": {"cheap": 0.8, "normal": 0.4, "expensive": 0.1},
@@ -23,6 +18,8 @@ ALPHA = {
 
 
 class Controller(ABC):
+    """reset() once per run, dispatch() once per step."""
+
     name = "controller"
 
     def reset(self, community: CommunityParams, scenario: Scenario) -> None:
@@ -30,25 +27,24 @@ class Controller(ABC):
         self.scenario = scenario
 
     @abstractmethod
-    def dispatch(self, state) -> Dispatch: ...
+    def dispatch(self, state: SimState) -> Dispatch: ...
 
 
 def price_zones(price: np.ndarray, steps_per_day: int, cheap_q: float, expensive_q: float) -> np.ndarray:
-    """'cheap' / 'normal' / 'expensive' per step, using quantiles of each day's prices.
-
-    Relative thresholds (the spec's indices_cheap / indices_expensive) instead of fixed
-    lei values, so the zones exist whatever the absolute price level is.
-    """
+    """(n_steps,) labels 'cheap' / 'normal' / 'expensive' from the quantiles of each day (level-independent)."""
     zones = np.full(price.shape, "normal", dtype=object)
-    for s in range(0, len(price), steps_per_day):
-        day = price[s : s + steps_per_day]
-        lo, hi = np.quantile(day, [cheap_q, expensive_q])
-        zones[s : s + steps_per_day][day <= lo] = "cheap"
-        zones[s : s + steps_per_day][day >= hi] = "expensive"
+    for day_start in range(0, len(price), steps_per_day):
+        day = price[day_start : day_start + steps_per_day]
+        low, high = np.quantile(day, [cheap_q, expensive_q])
+        zones[day_start : day_start + steps_per_day][day <= low] = "cheap"
+        zones[day_start : day_start + steps_per_day][day >= high] = "expensive"
     return zones
 
 
 class RuleBasedController(Controller):
+    """Priority rules per step: shed flexible load, own PV, battery, neighbours, grid, arbitrage.
+    Every flag switches one rule off, which gives the baseline strategies."""
+
     def __init__(
         self,
         use_battery: bool = True,
@@ -71,86 +67,101 @@ class RuleBasedController(Controller):
         self.arbitrage_target_ratio = arbitrage_target_ratio
         self.name = name
 
-    def reset(self, community, scenario):
+    def reset(self, community: CommunityParams, scenario: Scenario) -> None:
         super().reset(community, scenario)
         houses = community.houses
         self.zones = price_zones(
             scenario.price_import, scenario.steps_per_day, self.cheap_quantile, self.expensive_quantile
         )
-        self.p2p_mask = np.array([h.p2p_enabled for h in houses], dtype=float)
-        self.profit = np.array([h.mode == "Profit" for h in houses])
-        self.has_batt = np.array([h.battery is not None for h in houses])
-        self.capacity = np.array([h.battery.capacity_kwh if h.battery else 0.0 for h in houses])
-        self.eta_ch = np.array([h.battery.eta_ch if h.battery else 1.0 for h in houses])
+        self.p2p_mask = np.array([house.p2p_enabled for house in houses], dtype=float)
+        self.is_profit = np.array([house.mode == "Profit" for house in houses])
+        self.has_battery = np.array([house.battery is not None for house in houses])
+        self.capacity_kwh = np.array([house.battery.capacity_kwh if house.battery else 0.0 for house in houses])
+        self.eta_ch = np.array([house.battery.eta_ch if house.battery else 1.0 for house in houses])
 
-    def dispatch(self, state) -> Dispatch:
-        sc, g, t, dt = self.scenario, self.community.grid, state.t, self.scenario.dt_h
-        H = self.community.n_houses
-        pv, crit, flex = sc.pv_kw[:, t], sc.load_crit_kw[:, t], sc.load_flex_kw[:, t]
-        d = Dispatch.zeros(H)
+    def _shed_flexible_load(self, dispatch: Dispatch, flex: np.ndarray, t: int) -> None:
+        if not self.apply_alpha:
+            return
+        zone = self.zones[t]
+        alpha = np.array([ALPHA[house.mode][zone] for house in self.community.houses])
+        dispatch.shed = (1 - alpha) * flex
 
-        # 1. Mode/price flexibility: drop part of the non-critical load (spec §5)
-        if self.apply_alpha:
-            zone = self.zones[t]
-            alpha = np.array([ALPHA[h.mode][zone] for h in self.community.houses])
-            d.shed = (1 - alpha) * flex
-        load = crit + flex - d.shed
+    def _use_battery(
+        self, dispatch: Dispatch, surplus: np.ndarray, deficit: np.ndarray,
+        max_charge: np.ndarray, max_discharge: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        dispatch.dis = np.minimum(deficit, max_discharge)
+        deficit = deficit - dispatch.dis
+        dispatch.ch = np.minimum(surplus, max_charge)
+        surplus = surplus - dispatch.ch
+        return surplus, deficit
 
-        # 2. PV covers own load first
+    def _trade_p2p(
+        self, dispatch: Dispatch, surplus: np.ndarray, deficit: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if not self.p2p:
+            return surplus, deficit
+        offered = surplus * self.p2p_mask
+        wanted = deficit * self.p2p_mask
+        traded = min(offered.sum(), wanted.sum(), self.community.grid.internal_line_kw)
+        if traded <= 0:
+            return surplus, deficit
+        dispatch.p2p_out = offered * (traded / offered.sum())
+        dispatch.p2p_in = wanted * (traded / wanted.sum())
+        return surplus - dispatch.p2p_out, deficit - dispatch.p2p_in
+
+    def _export_or_curtail(self, dispatch: Dispatch, surplus: np.ndarray) -> None:
+        grid = self.community.grid
+        dispatch.exp = surplus.copy()
+        if dispatch.exp.sum() > grid.export_max_kw:
+            dispatch.exp *= grid.export_max_kw / dispatch.exp.sum()
+        dispatch.curtail = surplus - dispatch.exp
+
+    def _import_or_shed(self, dispatch: Dispatch, deficit: np.ndarray) -> None:
+        grid = self.community.grid
+        dispatch.imp = deficit.copy()
+        if dispatch.imp.sum() > grid.import_max_kw:
+            dispatch.imp *= grid.import_max_kw / dispatch.imp.sum()
+            dispatch.shed = dispatch.shed + (deficit - dispatch.imp)
+
+    def _arbitrage(self, dispatch: Dispatch, state: SimState, max_charge: np.ndarray, dt_h: float) -> None:
+        if not (self.arbitrage and self.use_battery and self.zones[state.t] == "cheap"):
+            return
+        candidates = self.is_profit & self.has_battery & (dispatch.dis <= 0)
+        target_kw = (self.arbitrage_target_ratio * self.capacity_kwh - state.soc_kwh) / (self.eta_ch * dt_h)
+        wanted = np.where(candidates, np.clip(np.minimum(max_charge - dispatch.ch, target_kw), 0, None), 0.0)
+        headroom = max(self.community.grid.import_max_kw - dispatch.imp.sum(), 0.0)
+        if wanted.sum() > headroom:
+            wanted *= headroom / wanted.sum()
+        dispatch.ch = dispatch.ch + wanted
+        dispatch.imp = dispatch.imp + wanted
+
+    def dispatch(self, state: SimState) -> Dispatch:
+        scenario, t, dt_h = self.scenario, state.t, self.scenario.dt_h
+        n_houses = self.community.n_houses
+        pv = scenario.pv_kw[:, t]
+        critical, flex = scenario.load_crit_kw[:, t], scenario.load_flex_kw[:, t]
+        dispatch = Dispatch.zeros(n_houses)
+
+        self._shed_flexible_load(dispatch, flex, t)
+        load = critical + flex - dispatch.shed
+
         direct = np.minimum(pv, load)
         surplus = pv - direct
         deficit = load - direct
 
-        max_ch = state.max_charge_kw(dt) if self.use_battery else np.zeros(H)
-        max_dis = state.max_discharge_kw(dt) if self.use_battery else np.zeros(H)
+        zeros = np.zeros(n_houses)
+        max_charge = state.max_charge_kw(dt_h) if self.use_battery else zeros
+        max_discharge = state.max_discharge_kw(dt_h) if self.use_battery else zeros
 
-        def battery():
-            nonlocal surplus, deficit
-            d.dis = np.minimum(deficit, max_dis)
-            deficit = deficit - d.dis
-            d.ch = np.minimum(surplus, max_ch)
-            surplus = surplus - d.ch
-
-        def p2p():
-            nonlocal surplus, deficit
-            if not self.p2p:
-                return
-            S, D = surplus * self.p2p_mask, deficit * self.p2p_mask
-            traded = min(S.sum(), D.sum(), g.internal_line_kw)  # kW vs kW
-            if traded <= 0:
-                return
-            out, inn = S * (traded / S.sum()), D * (traded / D.sum())
-            d.p2p_out, d.p2p_in = out, inn
-            surplus, deficit = surplus - out, deficit - inn
-
-        # 3-4. Battery and neighbours; the spec order is battery first
         if self.p2p_before_battery:
-            p2p(); battery()
+            surplus, deficit = self._trade_p2p(dispatch, surplus, deficit)
+            surplus, deficit = self._use_battery(dispatch, surplus, deficit, max_charge, max_discharge)
         else:
-            battery(); p2p()
+            surplus, deficit = self._use_battery(dispatch, surplus, deficit, max_charge, max_discharge)
+            surplus, deficit = self._trade_p2p(dispatch, surplus, deficit)
 
-        # 5. Remaining surplus -> grid export (community limit), the rest is curtailed
-        d.exp = surplus.copy()
-        if d.exp.sum() > g.export_max_kw:
-            d.exp *= g.export_max_kw / d.exp.sum()
-        d.curtail = surplus - d.exp
-
-        # 6. Remaining deficit -> grid import; above the limit, load is shed (and reported)
-        d.imp = deficit.copy()
-        if d.imp.sum() > g.import_max_kw:
-            d.imp *= g.import_max_kw / d.imp.sum()
-            d.shed = d.shed + (deficit - d.imp)
-
-        # 7. Arbitrage: Profit houses charge from the grid in cheap hours, within the
-        #    battery's remaining power budget for this step and the import headroom
-        if self.arbitrage and self.use_battery and self.zones[t] == "cheap":
-            cand = self.profit & self.has_batt & (d.dis <= 0)
-            target = (self.arbitrage_target_ratio * self.capacity - state.soc_kwh) / (self.eta_ch * dt)
-            want = np.where(cand, np.clip(np.minimum(max_ch - d.ch, target), 0, None), 0.0)
-            room = max(g.import_max_kw - d.imp.sum(), 0.0)
-            if want.sum() > room:
-                want *= room / want.sum()
-            d.ch = d.ch + want
-            d.imp = d.imp + want
-
-        return d
+        self._export_or_curtail(dispatch, surplus)
+        self._import_or_shed(dispatch, deficit)
+        self._arbitrage(dispatch, state, max_charge, dt_h)
+        return dispatch
