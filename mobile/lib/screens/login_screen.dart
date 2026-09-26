@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
 
 class LoginScreen extends StatefulWidget {
-  final VoidCallback onLoginSuccess;
-  
-  const LoginScreen({super.key, required this.onLoginSuccess});
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -33,44 +32,19 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
     try {
       if (_isRegisterMode) {
-        final result = await userApiService.register(
-          _usernameController.text,
-          _passwordController.text,
-        );
-        
-        if (result != null && result['error'] == null) {
-          // Registration successful, now login
-          final loginSuccess = await userApiService.login(
-            _usernameController.text,
-            _passwordController.text,
-          );
-          
-          if (loginSuccess) {
-            widget.onLoginSuccess();
-          } else {
-            setState(() => _errorMessage = 'Registration successful but login failed');
-          }
-        } else {
-          setState(() => _errorMessage = result?['error'] ?? 'Registration failed');
-        }
-      } else {
-        final success = await userApiService.login(
-          _usernameController.text,
-          _passwordController.text,
-        );
-        
-        if (success) {
-          widget.onLoginSuccess();
-        } else {
-          setState(() => _errorMessage = 'Invalid username or password');
-        }
+        await userApiService.register(username, password);
       }
-    } catch (e) {
-      setState(() => _errorMessage = 'Connection error: $e');
+      // Login updates authState, which swaps this screen for the home screen.
+      await userApiService.login(username, password);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMessage = e.message);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -90,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         child: SafeArea(
-          top: false, // iOS status bar simulat se ocupă de partea de sus
+          top: false,
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
@@ -115,30 +89,34 @@ class _LoginScreenState extends State<LoginScreen> {
                         Text(
                           'VPP Simulator',
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green.shade800,
-                          ),
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade800,
+                              ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _isRegisterMode ? 'Create Account' : 'Welcome Back',
+                          _isRegisterMode ? 'Creează un cont' : 'Bine ai revenit',
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey.shade600,
-                          ),
+                                color: Colors.grey.shade600,
+                              ),
                         ),
                         const SizedBox(height: 32),
                         TextFormField(
                           controller: _usernameController,
+                          autofillHints: const [AutofillHints.username],
                           decoration: InputDecoration(
-                            labelText: 'Username',
+                            labelText: 'Utilizator',
                             prefixIcon: const Icon(Icons.person_outline),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter username';
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Introdu numele de utilizator';
+                            }
+                            if (_isRegisterMode && value.trim().length < 3) {
+                              return 'Minim 3 caractere';
                             }
                             return null;
                           },
@@ -147,8 +125,10 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onFieldSubmitted: (_) => _isLoading ? null : _submit(),
                           decoration: InputDecoration(
-                            labelText: 'Password',
+                            labelText: 'Parolă',
                             prefixIcon: const Icon(Icons.lock_outline),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -156,10 +136,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please enter password';
+                              return 'Introdu parola';
                             }
                             if (_isRegisterMode && value.length < 6) {
-                              return 'Password must be at least 6 characters';
+                              return 'Parola trebuie să aibă cel puțin 6 caractere';
                             }
                             return null;
                           },
@@ -194,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : Text(_isRegisterMode ? 'Register' : 'Login'),
+                                : Text(_isRegisterMode ? 'Înregistrare' : 'Autentificare'),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -206,11 +186,19 @@ class _LoginScreenState extends State<LoginScreen> {
                             });
                           },
                           child: Text(
-                            _isRegisterMode
-                                ? 'Already have an account? Login'
-                                : 'Don\'t have an account? Register',
+                            _isRegisterMode ? 'Ai deja cont? Autentifică-te' : 'Nu ai cont? Înregistrează-te',
                           ),
                         ),
+                        if (_isRegisterMode) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Contul nou nu are o casă asignată până o alocă administratorul.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

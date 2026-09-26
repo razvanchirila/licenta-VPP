@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Page indicator with dots for SmartStack
-/// Shows current page position with highlighted dot
 class PageIndicator extends StatelessWidget {
   final int pageCount;
   final int currentPage;
@@ -15,7 +14,7 @@ class PageIndicator extends StatelessWidget {
     super.key,
     required this.pageCount,
     required this.currentPage,
-    this.activeColor = const Color(0xFF3B82F6),
+    this.activeColor = AppColors.blue,
     this.inactiveColor = const Color(0xFF4B5563),
     this.dotSize = 6,
     this.activeDotSize = 8,
@@ -41,7 +40,7 @@ class PageIndicator extends StatelessWidget {
               boxShadow: isActive
                   ? [
                       BoxShadow(
-                        color: activeColor.withOpacity(0.4),
+                        color: activeColor.withValues(alpha: 0.4),
                         blurRadius: 4,
                         spreadRadius: 1,
                       ),

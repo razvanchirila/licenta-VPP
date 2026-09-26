@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_interface/state/app_state.dart';
 import 'package:flutter_interface/widgets/smart_stack/cards/temperature_card.dart';
 import 'package:flutter_interface/widgets/smart_stack/climate_control_popup.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Temperature page for SmartStack
-/// Contains indoor (interactive) and outdoor (display only) temperature cards
 class TemperaturePage extends StatefulWidget {
   const TemperaturePage({super.key});
 
@@ -48,7 +47,6 @@ class _TemperaturePageState extends State<TemperaturePage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          // Outdoor temperature card (display only) - LEFT
           Expanded(
             child: TemperatureCard(
               temperature: appState.outdoorTemperature,
@@ -60,13 +58,12 @@ class _TemperaturePageState extends State<TemperaturePage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Indoor temperature card (interactive) - RIGHT
           Expanded(
             child: TemperatureCard(
               temperature: appState.indoorTemperature,
-              label: 'Interior',
+              label: 'Interior (țintă)',
               icon: Icons.home_rounded,
-              iconColor: const Color(0xFFFBBF24),
+              iconColor: AppColors.amber,
               isInteractive: true,
               onTap: _openClimateControl,
               useCelsius: appState.useCelsius,

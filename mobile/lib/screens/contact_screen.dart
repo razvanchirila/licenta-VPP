@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/theme.dart';
 
 class ContactScreen extends StatelessWidget {
   const ContactScreen({super.key});
@@ -11,7 +12,7 @@ class ContactScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label copiat în clipboard'),
-        backgroundColor: const Color(0xFF22C55E),
+        backgroundColor: AppColors.green,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -20,9 +21,9 @@ class ContactScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.deepBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: AppColors.deepBackground,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
@@ -60,7 +61,7 @@ class ContactScreen extends StatelessWidget {
                 icon: Icons.email_rounded,
                 title: 'Email',
                 subtitle: 'support@vpp-simulator.ro',
-                color: const Color(0xFF3B82F6),
+                color: AppColors.blue,
                 onTap: () => _copyToClipboard(context, 'support@vpp-simulator.ro', 'Email'),
               ),
               const SizedBox(height: 12),
@@ -69,7 +70,7 @@ class ContactScreen extends StatelessWidget {
                 icon: Icons.phone_rounded,
                 title: 'Telefon',
                 subtitle: '+40 721 234 567',
-                color: const Color(0xFF22C55E),
+                color: AppColors.green,
                 onTap: () => _copyToClipboard(context, '+40721234567', 'Telefon'),
               ),
               const SizedBox(height: 12),
@@ -78,7 +79,7 @@ class ContactScreen extends StatelessWidget {
                 icon: Icons.location_on_rounded,
                 title: 'Adresă',
                 subtitle: 'Str. Energiei Nr. 10, București',
-                color: const Color(0xFFFBBF24),
+                color: AppColors.amber,
                 onTap: () => _copyToClipboard(context, 'Str. Energiei Nr. 10, București', 'Adresa'),
               ),
               const SizedBox(height: 32),
@@ -104,15 +105,18 @@ class ContactScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _buildFaqItem(
                 question: 'Cum pot monitoriza consumul de energie?',
-                answer: 'Accesează secțiunea Energy din meniul principal pentru a vedea consumul în timp real și istoricul.',
+                answer:
+                    'Accesează secțiunea Energy din meniul principal pentru a vedea consumul în timp real și istoricul.',
               ),
               _buildFaqItem(
                 question: 'Ce înseamnă P2P Trading?',
-                answer: 'P2P Trading îți permite să vinzi sau să cumperi energie direct de la alți prosumatori din comunitate.',
+                answer:
+                    'P2P Trading îți permite să vinzi sau să cumperi energie direct de la alți prosumatori din comunitate.',
               ),
               _buildFaqItem(
                 question: 'Cum funcționează bateria Powerwall?',
-                answer: 'Bateria stochează energia solară în exces și o folosește când producția solară este scăzută sau în caz de pană de curent.',
+                answer:
+                    'Bateria stochează energia solară în exces și o folosește când producția solară este scăzută sau în caz de pană de curent.',
               ),
               const SizedBox(height: 40),
             ],
@@ -130,10 +134,10 @@ class ContactScreen extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.8),
+            color: AppColors.surfaceAlt.withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -143,12 +147,12 @@ class ContactScreen extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.2),
+                  color: AppColors.blue.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.support_agent_rounded,
-                  color: Color(0xFF3B82F6),
+                  color: AppColors.blue,
                   size: 40,
                 ),
               ),
@@ -166,7 +170,7 @@ class ContactScreen extends StatelessWidget {
                 'Echipa noastră de suport este disponibilă pentru orice întrebare despre sistemul tău de energie.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
-                  color: Colors.white.withOpacity(0.6),
+                  color: Colors.white.withValues(alpha: 0.6),
                   fontSize: 14,
                 ),
               ),
@@ -190,10 +194,10 @@ class ContactScreen extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: color.withOpacity(0.3),
+            color: color.withValues(alpha: 0.3),
             width: 1,
           ),
         ),
@@ -203,7 +207,7 @@ class ContactScreen extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
+                color: color.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: color, size: 24),
@@ -225,7 +229,7 @@ class ContactScreen extends StatelessWidget {
                   Text(
                     subtitle,
                     style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.6),
+                      color: Colors.white.withValues(alpha: 0.6),
                       fontSize: 14,
                     ),
                   ),
@@ -234,7 +238,7 @@ class ContactScreen extends StatelessWidget {
             ),
             Icon(
               Icons.copy_rounded,
-              color: Colors.white.withOpacity(0.4),
+              color: Colors.white.withValues(alpha: 0.4),
               size: 20,
             ),
           ],
@@ -247,10 +251,10 @@ class ContactScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: Colors.white.withValues(alpha: 0.1),
           width: 1,
         ),
       ),
@@ -273,7 +277,7 @@ class ContactScreen extends StatelessWidget {
         Text(
           day,
           style: GoogleFonts.inter(
-            color: Colors.white.withOpacity(0.8),
+            color: Colors.white.withValues(alpha: 0.8),
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -284,7 +288,7 @@ class ContactScreen extends StatelessWidget {
               width: 8,
               height: 8,
               decoration: BoxDecoration(
-                color: isOpen ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+                color: isOpen ? AppColors.green : AppColors.red,
                 shape: BoxShape.circle,
               ),
             ),
@@ -292,7 +296,7 @@ class ContactScreen extends StatelessWidget {
             Text(
               hours,
               style: GoogleFonts.inter(
-                color: isOpen ? Colors.white : Colors.white.withOpacity(0.5),
+                color: isOpen ? Colors.white : Colors.white.withValues(alpha: 0.5),
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -307,10 +311,10 @@ class ContactScreen extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
+        color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: Colors.white.withOpacity(0.1),
+          color: Colors.white.withValues(alpha: 0.1),
           width: 1,
         ),
       ),
@@ -319,21 +323,21 @@ class ContactScreen extends StatelessWidget {
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          iconColor: Colors.white.withOpacity(0.5),
-          collapsedIconColor: Colors.white.withOpacity(0.5),
+          iconColor: Colors.white.withValues(alpha: 0.5),
+          collapsedIconColor: Colors.white.withValues(alpha: 0.5),
           title: Text(
-          question,
-          style: GoogleFonts.inter(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+            question,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
           children: [
             Text(
               answer,
               style: GoogleFonts.inter(
-                color: Colors.white.withOpacity(0.6),
+                color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 13,
               ),
             ),

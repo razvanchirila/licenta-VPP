@@ -1,25 +1,27 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_interface/models/house.dart';
 import 'package:flutter_interface/widgets/smart_stack/page_indicator.dart';
 import 'package:flutter_interface/widgets/smart_stack/pages/temperature_page.dart';
 import 'package:flutter_interface/widgets/smart_stack/pages/lighting_page.dart';
 import 'package:flutter_interface/widgets/smart_stack/pages/battery_page.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Smart Stack widget - replaces DevicesDock
-/// Vertical swipeable container with multiple card pages
 class SmartStack extends StatefulWidget {
+  final Battery? battery;
   final double batteryPercent;
-  final double batteryCapacityKwh;
-  final double pricePerKwh;
+  final double currentConsumptionKw;
+  final double? pricePerKwh;
   final bool isPriceRising;
   final VoidCallback? onPriceTap;
 
   const SmartStack({
     super.key,
-    this.batteryPercent = 74,
-    this.batteryCapacityKwh = 13.5,
-    this.pricePerKwh = 0.85,
-    this.isPriceRising = true,
+    required this.battery,
+    required this.batteryPercent,
+    required this.currentConsumptionKw,
+    required this.pricePerKwh,
+    this.isPriceRising = false,
     this.onPriceTap,
   });
 
@@ -30,8 +32,7 @@ class SmartStack extends StatefulWidget {
 class _SmartStackState extends State<SmartStack> {
   late PageController _pageController;
   int _currentPage = 0;
-  
-  // Number of pages in the stack
+
   static const int _pageCount = 3;
 
   @override
@@ -63,51 +64,46 @@ class _SmartStackState extends State<SmartStack> {
           child: Container(
             width: double.infinity,
             height: 100,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.75),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.1),
-              width: 1,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    scrollDirection: Axis.vertical,
+                    onPageChanged: _onPageChanged,
+                    children: [
+                      const TemperaturePage(),
+                      const LightingPage(),
+                      BatteryPage(
+                        battery: widget.battery,
+                        batteryPercent: widget.batteryPercent,
+                        currentConsumptionKw: widget.currentConsumptionKw,
+                        pricePerKwh: widget.pricePerKwh,
+                        isPriceRising: widget.isPriceRising,
+                        onPriceTap: widget.onPriceTap,
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: PageIndicator(
+                    pageCount: _pageCount,
+                    currentPage: _currentPage,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              // Main content - PageView
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  scrollDirection: Axis.vertical,
-                  onPageChanged: _onPageChanged,
-                  children: [
-                    // Page 1: Temperature cards
-                    const TemperaturePage(),
-                    // Page 2: Lighting control
-                    const LightingPage(),
-                    // Page 3: Battery autonomy + Price indicator
-                    BatteryPage(
-                      batteryPercent: widget.batteryPercent,
-                      batteryCapacityKwh: widget.batteryCapacityKwh,
-                      pricePerKwh: widget.pricePerKwh,
-                      isPriceRising: widget.isPriceRising,
-                      onPriceTap: widget.onPriceTap,
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Page indicator (dots) on the right
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: PageIndicator(
-                  pageCount: _pageCount,
-                  currentPage: _currentPage,
-                ),
-              ),
-            ],
-          ),
         ),
-      ),
       ),
     );
   }

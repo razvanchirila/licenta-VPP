@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Climate control modes
 enum ClimateMode {
   cold,
   fan,
@@ -8,7 +7,6 @@ enum ClimateMode {
   heat,
 }
 
-/// Extension for ClimateMode display
 extension ClimateModeExtension on ClimateMode {
   String get displayName {
     switch (this) {
@@ -24,7 +22,6 @@ extension ClimateModeExtension on ClimateMode {
   }
 }
 
-/// Available rooms for climate control
 enum ClimateRoom {
   livingRoom,
   bedroom,
@@ -65,7 +62,6 @@ extension ClimateRoomExtension on ClimateRoom {
   }
 }
 
-/// Schedule entry for automation
 class ClimateSchedule {
   final TimeOfDay onTime;
   final TimeOfDay offTime;
@@ -96,7 +92,7 @@ class ClimateSchedule {
   }
 }
 
-/// Model for climate control settings (mock/local state)
+/// Mock/local state, not sent to the backend.
 class ClimateSettings {
   final double targetTemperature;
   final ClimateMode mode;

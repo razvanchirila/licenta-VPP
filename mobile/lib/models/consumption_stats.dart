@@ -1,6 +1,5 @@
-/// Data models for energy analytics and statistics.
+import 'package:flutter_interface/models/json_utils.dart';
 
-/// Energy consumption data for a single device.
 class DeviceConsumption {
   final int deviceId;
   final String deviceName;
@@ -8,7 +7,7 @@ class DeviceConsumption {
   final double percentageOfTotal;
   final double estimatedCost;
 
-  DeviceConsumption({
+  const DeviceConsumption({
     required this.deviceId,
     required this.deviceName,
     required this.totalKwh,
@@ -16,18 +15,15 @@ class DeviceConsumption {
     required this.estimatedCost,
   });
 
-  factory DeviceConsumption.fromJson(Map<String, dynamic> json) {
-    return DeviceConsumption(
-      deviceId: json['device_id'] as int,
-      deviceName: json['device_name'] as String,
-      totalKwh: (json['total_kwh'] as num).toDouble(),
-      percentageOfTotal: (json['percentage_of_total'] as num).toDouble(),
-      estimatedCost: (json['estimated_cost'] as num).toDouble(),
-    );
-  }
+  factory DeviceConsumption.fromJson(Map<String, dynamic> json) => DeviceConsumption(
+        deviceId: asInt(json['device_id']),
+        deviceName: asString(json['device_name']),
+        totalKwh: asDouble(json['total_kwh']),
+        percentageOfTotal: asDouble(json['percentage_of_total']),
+        estimatedCost: asDouble(json['estimated_cost']),
+      );
 }
 
-/// Summary of energy consumption for a period.
 class ConsumptionSummary {
   final double totalKwh;
   final double averageDailyKwh;
@@ -38,7 +34,7 @@ class ConsumptionSummary {
   final String currency;
   final bool hasData;
 
-  ConsumptionSummary({
+  const ConsumptionSummary({
     required this.totalKwh,
     required this.averageDailyKwh,
     required this.previousPeriodKwh,
@@ -49,67 +45,52 @@ class ConsumptionSummary {
     required this.hasData,
   });
 
-  factory ConsumptionSummary.fromJson(Map<String, dynamic> json) {
-    return ConsumptionSummary(
-      totalKwh: (json['total_kwh'] as num).toDouble(),
-      averageDailyKwh: (json['average_daily_kwh'] as num).toDouble(),
-      previousPeriodKwh: (json['previous_period_kwh'] as num).toDouble(),
-      changePercent: json['change_percent'] != null
-          ? (json['change_percent'] as num).toDouble()
-          : null,
-      period: json['period'] as String,
-      estimatedCost: (json['estimated_cost'] as num).toDouble(),
-      currency: json['currency'] as String,
-      hasData: json['has_data'] as bool,
-    );
-  }
+  factory ConsumptionSummary.fromJson(Map<String, dynamic> json) => ConsumptionSummary(
+        totalKwh: asDouble(json['total_kwh']),
+        averageDailyKwh: asDouble(json['average_daily_kwh']),
+        previousPeriodKwh: asDouble(json['previous_period_kwh']),
+        changePercent: asDoubleOrNull(json['change_percent']),
+        period: asString(json['period']),
+        estimatedCost: asDouble(json['estimated_cost']),
+        currency: asString(json['currency'], 'RON'),
+        hasData: asBool(json['has_data'], true),
+      );
 }
 
-/// Single data point for consumption charts.
 class ChartDataPoint {
   final DateTime timestamp;
   final double valueKwh;
 
-  ChartDataPoint({
-    required this.timestamp,
-    required this.valueKwh,
-  });
+  const ChartDataPoint({required this.timestamp, required this.valueKwh});
 
-  factory ChartDataPoint.fromJson(Map<String, dynamic> json) {
-    return ChartDataPoint(
-      timestamp: DateTime.parse(json['timestamp'] as String),
-      valueKwh: (json['value_kwh'] as num).toDouble(),
-    );
+  static ChartDataPoint? fromJson(Map<String, dynamic> json) {
+    final t = asDateTime(json['timestamp']);
+    if (t == null) return null;
+    return ChartDataPoint(timestamp: t, valueKwh: asDouble(json['value_kwh']));
   }
 }
 
-/// Chart data response with granularity info.
 class ChartData {
   final String granularity;
   final String startDate;
   final String endDate;
   final List<ChartDataPoint> dataPoints;
 
-  ChartData({
+  const ChartData({
     required this.granularity,
     required this.startDate,
     required this.endDate,
     required this.dataPoints,
   });
 
-  factory ChartData.fromJson(Map<String, dynamic> json) {
-    return ChartData(
-      granularity: json['granularity'] as String,
-      startDate: json['start_date'] as String,
-      endDate: json['end_date'] as String,
-      dataPoints: (json['data_points'] as List)
-          .map((e) => ChartDataPoint.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
-  }
+  factory ChartData.fromJson(Map<String, dynamic> json) => ChartData(
+        granularity: asString(json['granularity'], 'daily'),
+        startDate: asString(json['start_date']),
+        endDate: asString(json['end_date']),
+        dataPoints: asMapList(json['data_points']).map(ChartDataPoint.fromJson).whereType<ChartDataPoint>().toList(),
+      );
 }
 
-/// Comparison between current and previous month.
 class MonthlyComparison {
   final String currentMonth;
   final double currentMonthKwh;
@@ -121,7 +102,7 @@ class MonthlyComparison {
   final bool isProjection;
   final int daysRemaining;
 
-  MonthlyComparison({
+  const MonthlyComparison({
     required this.currentMonth,
     required this.currentMonthKwh,
     required this.previousMonth,
@@ -133,42 +114,33 @@ class MonthlyComparison {
     required this.daysRemaining,
   });
 
-  factory MonthlyComparison.fromJson(Map<String, dynamic> json) {
-    return MonthlyComparison(
-      currentMonth: json['current_month'] as String,
-      currentMonthKwh: (json['current_month_kwh'] as num).toDouble(),
-      previousMonth: json['previous_month'] as String,
-      previousMonthKwh: (json['previous_month_kwh'] as num).toDouble(),
-      changePercent: json['change_percent'] != null
-          ? (json['change_percent'] as num).toDouble()
-          : null,
-      trend: json['trend'] as String,
-      projectedTotalKwh: (json['projected_total_kwh'] as num).toDouble(),
-      isProjection: json['is_projection'] as bool,
-      daysRemaining: json['days_remaining'] as int,
-    );
-  }
+  factory MonthlyComparison.fromJson(Map<String, dynamic> json) => MonthlyComparison(
+        currentMonth: asString(json['current_month']),
+        currentMonthKwh: asDouble(json['current_month_kwh']),
+        previousMonth: asString(json['previous_month']),
+        previousMonthKwh: asDouble(json['previous_month_kwh']),
+        changePercent: asDoubleOrNull(json['change_percent']),
+        trend: asString(json['trend'], 'stable'),
+        projectedTotalKwh: asDouble(json['projected_total_kwh']),
+        isProjection: asBool(json['is_projection']),
+        daysRemaining: asInt(json['days_remaining']),
+      );
 }
 
-/// Top consumers response.
 class TopConsumersResponse {
   final String period;
   final double totalHouseKwh;
   final List<DeviceConsumption> devices;
 
-  TopConsumersResponse({
+  const TopConsumersResponse({
     required this.period,
     required this.totalHouseKwh,
     required this.devices,
   });
 
-  factory TopConsumersResponse.fromJson(Map<String, dynamic> json) {
-    return TopConsumersResponse(
-      period: json['period'] as String,
-      totalHouseKwh: (json['total_house_kwh'] as num).toDouble(),
-      devices: (json['devices'] as List)
-          .map((e) => DeviceConsumption.fromJson(e as Map<String, dynamic>))
-          .toList(),
-    );
-  }
+  factory TopConsumersResponse.fromJson(Map<String, dynamic> json) => TopConsumersResponse(
+        period: asString(json['period']),
+        totalHouseKwh: asDouble(json['total_house_kwh']),
+        devices: asMapList(json['devices']).map(DeviceConsumption.fromJson).toList(),
+      );
 }

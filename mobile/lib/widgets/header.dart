@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/core/constants.dart';
 
-/// Reusable header widget for the VPP Simulator app
 class Header extends StatelessWidget {
   final String address;
   final String status;
@@ -16,78 +14,73 @@ class Header extends StatelessWidget {
 
   const Header({
     super.key,
-    this.address = 'Str. Victoriei 123',
-    this.status = 'Se descarcă',
-    this.isDischarging = true,
+    this.address = '',
+    this.status = '',
+    this.isDischarging = false,
     this.notificationCount = 0,
     this.onProfileTap,
     this.customWidget,
     this.showCustomWidget = false,
-    this.userName = 'Tudor',
+    this.userName = '',
   });
 
-  /// Returnează salutul bazat pe ora curentă
   String _getGreeting() {
+    final name = userName.isEmpty ? '' : ', $userName';
     final hour = DateTime.now().hour;
     if (hour >= 5 && hour < 12) {
-      return 'Bună dimineața, $userName! 🤩';
+      return 'Bună dimineața$name!';
     } else if (hour >= 12 && hour < 18) {
-      return 'Salut, $userName! 😊';
+      return 'Salut$name!';
     } else {
-      return 'Seara faină, $userName! 🥱';
+      return 'Bună seara$name!';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(
+      padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingL,
         vertical: AppConstants.spacingS,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Coloana stânga: Salut, Status, Widget personalizat (vertical)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Salut
                 Text(
                   _getGreeting(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: Colors.white,
-                    fontSize: 18,
-                  ),
+                        color: Colors.white,
+                        fontSize: 18,
+                      ),
                 ),
-                SizedBox(height: AppConstants.spacingXS),
-                // Status cu indicator colorat
+                const SizedBox(height: AppConstants.spacingXS),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _StatusIndicator(isDischarging: isDischarging),
-                    SizedBox(width: AppConstants.spacingS),
+                    const SizedBox(width: AppConstants.spacingS),
                     Text(
                       status,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: isDischarging 
-                            ? AppTheme.battery
-                            : AppTheme.success,
-                        fontWeight: FontWeight.w500,
-                      ),
+                            color: isDischarging ? AppTheme.battery : AppTheme.success,
+                            fontWeight: FontWeight.w500,
+                          ),
                     ),
                   ],
                 ),
-                // Widget personalizat (buton Test)
                 if (showCustomWidget && customWidget != null) ...[
-                  SizedBox(height: AppConstants.spacingS),
+                  const SizedBox(height: AppConstants.spacingS),
                   customWidget!,
                 ],
               ],
             ),
           ),
-          // Buton profil cu badge notificări (dreapta)
           _ProfileButton(
             notificationCount: notificationCount,
             onTap: onProfileTap,
@@ -98,7 +91,6 @@ class Header extends StatelessWidget {
   }
 }
 
-/// Profile button with notification badge
 class _ProfileButton extends StatelessWidget {
   final int notificationCount;
   final VoidCallback? onTap;
@@ -121,7 +113,7 @@ class _ProfileButton extends StatelessWidget {
               color: AppTheme.theme.colorScheme.surface,
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 width: 1,
               ),
             ),
@@ -131,7 +123,6 @@ class _ProfileButton extends StatelessWidget {
               size: 24,
             ),
           ),
-          // Badge notificări
           if (notificationCount > 0)
             Positioned(
               right: 0,
@@ -143,7 +134,7 @@ class _ProfileButton extends StatelessWidget {
                   color: AppTheme.theme.colorScheme.error,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(
-                    color: AppTheme.theme.colorScheme.background,
+                    color: AppTheme.theme.colorScheme.surface,
                     width: 2,
                   ),
                 ),
@@ -151,9 +142,9 @@ class _ProfileButton extends StatelessWidget {
                   child: Text(
                     notificationCount > 9 ? '9+' : notificationCount.toString(),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
               ),
@@ -164,7 +155,6 @@ class _ProfileButton extends StatelessWidget {
   }
 }
 
-/// Animated status indicator
 class _StatusIndicator extends StatefulWidget {
   final bool isDischarging;
 
@@ -174,8 +164,7 @@ class _StatusIndicator extends StatefulWidget {
   State<_StatusIndicator> createState() => _StatusIndicatorState();
 }
 
-class _StatusIndicatorState extends State<_StatusIndicator>
-    with SingleTickerProviderStateMixin {
+class _StatusIndicatorState extends State<_StatusIndicator> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
 
@@ -186,7 +175,7 @@ class _StatusIndicatorState extends State<_StatusIndicator>
       duration: AppConstants.longAnimation,
       vsync: this,
     )..repeat(reverse: true);
-    
+
     _animation = Tween<double>(begin: 0.4, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
@@ -209,11 +198,11 @@ class _StatusIndicatorState extends State<_StatusIndicator>
           width: 8,
           height: 8,
           decoration: BoxDecoration(
-            color: color.withOpacity(_animation.value),
+            color: color.withValues(alpha: _animation.value),
             borderRadius: BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(_animation.value * 0.5),
+                color: color.withValues(alpha: _animation.value * 0.5),
                 blurRadius: 6,
                 spreadRadius: 1,
               ),

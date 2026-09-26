@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Card for master lighting control (All On / All Off)
 class LightingCard extends StatelessWidget {
   final bool allLightsOn;
   final VoidCallback onToggle;
@@ -25,7 +25,7 @@ class LightingCard extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFFFBBF24),
+                    AppColors.amber,
                     Color(0xFFF59E0B),
                   ],
                 )
@@ -35,7 +35,7 @@ class LightingCard extends StatelessWidget {
           boxShadow: allLightsOn
               ? [
                   BoxShadow(
-                    color: const Color(0xFFFBBF24).withOpacity(0.3),
+                    color: AppColors.amber.withValues(alpha: 0.3),
                     blurRadius: 12,
                     spreadRadius: 2,
                   ),
@@ -45,24 +45,20 @@ class LightingCard extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Light bulb icon
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: allLightsOn
-                    ? Colors.white.withOpacity(0.3)
-                    : Colors.white.withOpacity(0.1),
+                color: allLightsOn ? Colors.white.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 allLightsOn ? Icons.lightbulb : Icons.lightbulb_outline,
-                color: allLightsOn ? Colors.white : Colors.white.withOpacity(0.5),
+                color: allLightsOn ? Colors.white : Colors.white.withValues(alpha: 0.5),
                 size: 24,
               ),
             ),
             const SizedBox(width: 12),
-            // Label and state
             Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -70,7 +66,7 @@ class LightingCard extends StatelessWidget {
                 Text(
                   'Iluminare',
                   style: GoogleFonts.inter(
-                    color: allLightsOn ? Colors.white : Colors.white.withOpacity(0.9),
+                    color: allLightsOn ? Colors.white : Colors.white.withValues(alpha: 0.9),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -79,9 +75,7 @@ class LightingCard extends StatelessWidget {
                 Text(
                   allLightsOn ? 'All On' : 'All Off',
                   style: GoogleFonts.inter(
-                    color: allLightsOn
-                        ? Colors.white.withOpacity(0.8)
-                        : Colors.white.withOpacity(0.5),
+                    color: allLightsOn ? Colors.white.withValues(alpha: 0.8) : Colors.white.withValues(alpha: 0.5),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -89,15 +83,12 @@ class LightingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(width: 16),
-            // Toggle indicator
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               width: 44,
               height: 24,
               decoration: BoxDecoration(
-                color: allLightsOn
-                    ? Colors.white.withOpacity(0.3)
-                    : Colors.white.withOpacity(0.1),
+                color: allLightsOn ? Colors.white.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: AnimatedAlign(
@@ -108,7 +99,7 @@ class LightingCard extends StatelessWidget {
                   height: 20,
                   margin: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: allLightsOn ? Colors.white : Colors.white.withOpacity(0.5),
+                    color: allLightsOn ? Colors.white : Colors.white.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
                 ),

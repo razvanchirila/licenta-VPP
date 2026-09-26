@@ -1,57 +1,34 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/models/house.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Modal popup for displaying battery health information
-/// Shows battery health percentage, charge cycles, current percentage and capacity
-class BatteryHealthPopup extends StatelessWidget {
-  final double batteryPercent;
-  final double batteryCapacityKwh;
+class BatteryDetailsPopup extends StatelessWidget {
+  final Battery battery;
 
-  const BatteryHealthPopup({
-    super.key,
-    required this.batteryPercent,
-    required this.batteryCapacityKwh,
-  });
+  const BatteryDetailsPopup({super.key, required this.battery});
 
-  /// Generate fictive battery health (85-100%)
-  double get batteryHealthPercent {
-    // Simulate health based on cycles - newer battery = higher health
-    return 100 - (chargeCycles * 0.015);
-  }
-
-  /// Generate fictive charge cycles (150-400)
-  int get chargeCycles {
-    // Use a seed based on capacity to get consistent "random" value
-    return 150 + ((batteryCapacityKwh * 17).toInt() % 250);
-  }
-
-  Color _getHealthColor(double health) {
-    if (health >= 90) return const Color(0xFF22C55E);
-    if (health >= 80) return const Color(0xFFFBBF24);
-    return const Color(0xFFEF4444);
-  }
-
-  /// Show the popup as a modal bottom sheet
-  static void show(BuildContext context, {
-    required double batteryPercent,
-    required double batteryCapacityKwh,
-  }) {
+  static void show(BuildContext context, {required Battery battery}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => BatteryHealthPopup(
-        batteryPercent: batteryPercent,
-        batteryCapacityKwh: batteryCapacityKwh,
-      ),
+      builder: (context) => BatteryDetailsPopup(battery: battery),
     );
+  }
+
+  Color _socColor(double percent) {
+    if (percent >= 60) return AppColors.green;
+    if (percent >= 30) return AppColors.amber;
+    return AppColors.red;
   }
 
   @override
   Widget build(BuildContext context) {
-    final healthColor = _getHealthColor(batteryHealthPercent);
-    final availableEnergy = batteryCapacityKwh * (batteryPercent / 100);
+    final b = battery;
+    final color = _socColor(b.socPercent);
+    final reservePercent = b.capacityKwh > 0 ? 100 * b.socMinKwh / b.capacityKwh : 0.0;
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -60,38 +37,31 @@ class BatteryHealthPopup extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A).withOpacity(0.9),
+            color: AppColors.surfaceAlt.withValues(alpha: 0.9),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border.all(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Handle bar
               Container(
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 24),
-              
-              // Title
               Row(
                 children: [
-                  Icon(
-                    Icons.battery_charging_full_rounded,
-                    color: healthColor,
-                    size: 28,
-                  ),
+                  Icon(Icons.battery_charging_full_rounded, color: color, size: 28),
                   const SizedBox(width: 12),
                   Text(
-                    'Sănătatea Bateriei',
+                    'Bateria casei',
                     style: GoogleFonts.inter(
                       color: Colors.white,
                       fontSize: 20,
@@ -101,29 +71,25 @@ class BatteryHealthPopup extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
-              
-              // Health percentage - main display
-              _buildHealthCircle(healthColor),
+              _buildSocCircle(color),
               const SizedBox(height: 24),
-              
-              // Stats grid
               Row(
                 children: [
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.loop_rounded,
-                      label: 'Cicluri încărcare',
-                      value: '$chargeCycles',
-                      color: const Color(0xFF3B82F6),
+                      icon: Icons.bolt_rounded,
+                      label: 'Capacitate',
+                      value: '${b.capacityKwh.toStringAsFixed(1)} kWh',
+                      color: AppColors.amber,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.battery_std_rounded,
-                      label: 'Nivel actual',
-                      value: '${batteryPercent.round()}%',
-                      color: const Color(0xFF22C55E),
+                      icon: Icons.energy_savings_leaf_rounded,
+                      label: 'Disponibil peste rezervă',
+                      value: '${b.availableKwh.toStringAsFixed(1)} kWh',
+                      color: AppColors.emerald,
                     ),
                   ),
                 ],
@@ -133,32 +99,52 @@ class BatteryHealthPopup extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.bolt_rounded,
-                      label: 'Capacitate totală',
-                      value: '${batteryCapacityKwh.toStringAsFixed(1)} kWh',
-                      color: const Color(0xFFFBBF24),
+                      icon: Icons.shield_rounded,
+                      label: 'Rezervă backup',
+                      value: '${reservePercent.toStringAsFixed(0)}% (${b.socMinKwh.toStringAsFixed(1)} kWh)',
+                      color: AppColors.blue,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildStatCard(
-                      icon: Icons.energy_savings_leaf_rounded,
-                      label: 'Energie disponibilă',
-                      value: '${availableEnergy.toStringAsFixed(1)} kWh',
-                      color: const Color(0xFF10B981),
+                      icon: Icons.hub_rounded,
+                      label: 'Rezervă VPP',
+                      value: '${b.vppReserveKwh.toStringAsFixed(2)} kWh',
+                      color: const Color(0xFF8B5CF6),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.swap_vert_rounded,
+                      label: 'Putere max. înc./desc.',
+                      value: '${b.pChMaxKw.toStringAsFixed(1)} / ${b.pDisMaxKw.toStringAsFixed(1)} kW',
+                      color: AppColors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.percent_rounded,
+                      label: 'Randament înc./desc.',
+                      value: '${(b.etaCh * 100).toStringAsFixed(0)}% / ${(b.etaDis * 100).toStringAsFixed(0)}%',
+                      color: AppColors.slate,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              
-              // Close button
               SizedBox(
                 width: double.infinity,
                 child: TextButton(
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.1),
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -182,15 +168,15 @@ class BatteryHealthPopup extends StatelessWidget {
     );
   }
 
-  Widget _buildHealthCircle(Color healthColor) {
+  Widget _buildSocCircle(Color color) {
     return Container(
       width: 140,
       height: 140,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: healthColor.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         border: Border.all(
-          color: healthColor.withOpacity(0.5),
+          color: color.withValues(alpha: 0.5),
           width: 3,
         ),
       ),
@@ -198,7 +184,7 @@ class BatteryHealthPopup extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            '${batteryHealthPercent.toStringAsFixed(1)}%',
+            '${battery.socPercent.toStringAsFixed(0)}%',
             style: GoogleFonts.inter(
               color: Colors.white,
               fontSize: 32,
@@ -206,9 +192,9 @@ class BatteryHealthPopup extends StatelessWidget {
             ),
           ),
           Text(
-            'Sănătate',
+            '${battery.socKwh.toStringAsFixed(1)} kWh',
             style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -227,10 +213,10 @@ class BatteryHealthPopup extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: color.withOpacity(0.3),
+          color: color.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -243,7 +229,7 @@ class BatteryHealthPopup extends StatelessWidget {
             value,
             style: GoogleFonts.inter(
               color: Colors.white,
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -251,7 +237,7 @@ class BatteryHealthPopup extends StatelessWidget {
           Text(
             label,
             style: GoogleFonts.inter(
-              color: Colors.white.withOpacity(0.5),
+              color: Colors.white.withValues(alpha: 0.5),
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),

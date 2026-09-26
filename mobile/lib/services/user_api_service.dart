@@ -1,696 +1,158 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_interface/models/consumption_stats.dart';
+import 'package:flutter_interface/models/device.dart';
+import 'package:flutter_interface/models/energy.dart';
+import 'package:flutter_interface/models/house.dart';
+import 'package:flutter_interface/models/json_utils.dart';
+import 'package:flutter_interface/models/sim_prices.dart';
+import 'package:flutter_interface/models/trading.dart';
+import 'package:flutter_interface/services/api_client.dart';
 
-/// User API Service for Flutter - connects to port 8001
-/// 
-/// Handles authentication and user-specific endpoints
+/// Every method throws [ApiException] on failure; no null or mock fallbacks.
 class UserApiService {
-  /// Base URL for User API
-  final String baseUrl;
-  
-  /// HTTP client
-  final http.Client _client;
-  
-  /// JWT token storage key
-  static const String _tokenKey = 'jwt_token';
-  static const String _houseIdKey = 'house_id';
-  
-  /// Current JWT token
-  String? _token;
-  int? _houseId;
-  
-  /// Timeout duration
-  static const Duration timeout = Duration(seconds: 10);
-  
-  UserApiService({
-    this.baseUrl = 'http://localhost:8001',
-    http.Client? client,
-  }) : _client = client ?? http.Client();
-  
-  /// Initialize - load token from storage
-  Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_tokenKey);
-    _houseId = prefs.getInt(_houseIdKey);
-  }
-  
-  /// Check if user is logged in
-  bool get isLoggedIn => _token != null;
-  
-  /// Get current house ID
-  int? get houseId => _houseId;
-  
-  /// Get authorization headers
-  Map<String, String> get _authHeaders => {
-    'Content-Type': 'application/json',
-    if (_token != null) 'Authorization': 'Bearer $_token',
-  };
-  
-  void dispose() {
-    _client.close();
-  }
-  
-  // ============================================================
-  // AUTHENTICATION
-  // ============================================================
-  
-  /// Register a new user
-  Future<Map<String, dynamic>?> register(String username, String password) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'username': username, 'password': password}),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return {'error': json.decode(response.body)['detail'] ?? 'Registration failed'};
-    } catch (e) {
-      return {'error': 'Connection error: $e'};
+  final ApiClient client;
+  AuthState get auth => client.auth;
+
+  UserApiService(this.client);
+
+  int _requireHouse() {
+    final id = auth.houseId;
+    if (id == null) {
+      throw const ApiException(403, 'Contul nu are o casa asignata');
     }
+    return id;
   }
-  
-  /// Login and store token
-  Future<bool> login(String username, String password) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'username': username, 'password': password}),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        _token = data['access_token'];
-        _houseId = data['house_id'];
-        
-        // Save to storage
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_tokenKey, _token!);
-        if (_houseId != null) {
-          await prefs.setInt(_houseIdKey, _houseId!);
-        }
-        
-        return true;
-      }
-      return false;
-    } catch (e) {
-      print('Login error: $e');
-      return false;
+
+  Future<void> login(String username, String password) async {
+    final data = asMap(await client.post(
+      '/auth/login',
+      body: {'username': username, 'password': password},
+      withAuth: false,
+    ));
+    final token = data['access_token']?.toString();
+    if (token == null || token.isEmpty) {
+      throw const ApiException(500, 'Raspuns de autentificare invalid');
     }
+    await auth.setSession(
+      token: token,
+      houseId: asIntOrNull(data['house_id']),
+      username: asString(data['username'], username),
+      isAdmin: asBool(data['is_admin']),
+    );
   }
-  
-  /// Logout - clear token
-  Future<void> logout() async {
-    _token = null;
-    _houseId = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_houseIdKey);
+
+  Future<void> register(String username, String password) async {
+    await client.post(
+      '/auth/register',
+      body: {'username': username, 'password': password},
+      withAuth: false,
+    );
   }
-  
-  // ============================================================
-  // MY HOUSE ENDPOINTS
-  // ============================================================
-  
-  /// Get my house info
-  Future<Map<String, dynamic>?> getMyHouse() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/house'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching house: $e');
-      return null;
-    }
+
+  Future<void> logout() => auth.clear();
+
+  Future<House> getMyHouse() async => House.fromJson(asMap(await client.get('/me/house')));
+
+  Future<HouseSettings> getSettings() async => HouseSettings.fromJson(asMap(await client.get('/me/settings')));
+
+  Future<HouseSettings> updateSettings({String? mode, double? backupReservePercent}) async {
+    final body = <String, dynamic>{
+      if (mode != null) 'mode': mode,
+      if (backupReservePercent != null) 'backup_reserve_percent': backupReservePercent,
+    };
+    return HouseSettings.fromJson(asMap(await client.put('/me/settings', body: body)));
   }
-  
-  /// Get my devices
-  Future<List<dynamic>?> getMyDevices() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/devices'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as List<dynamic>;
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching devices: $e');
-      return null;
-    }
-  }
-  
-  /// Toggle a device
-  Future<Map<String, dynamic>?> toggleDevice(int deviceId) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/me/devices/$deviceId/toggle'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error toggling device: $e');
-      return null;
-    }
-  }
-  
-  /// Create a new device
-  Future<Map<String, dynamic>?> createDevice({
+
+  Future<List<Device>> getMyDevices() async => asMapList(await client.get('/me/devices')).map(Device.fromJson).toList();
+
+  Future<Device> toggleDevice(int deviceId) async =>
+      Device.fromJson(asMap(await client.post('/me/devices/$deviceId/toggle')));
+
+  Future<Device> createDevice({
     required String name,
     required double powerW,
     bool critical = false,
     bool statusOn = false,
-  }) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/me/devices'),
-        headers: _authHeaders,
-        body: json.encode({
-          'name': name,
-          'power_w': powerW,
-          'critical': critical,
-          'status_on': statusOn,
-        }),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      final error = json.decode(response.body);
-      return {'error': error['detail'] ?? 'Failed to create device'};
-    } catch (e) {
-      print('Error creating device: $e');
-      return {'error': 'Connection error: $e'};
-    }
-  }
-  
-  /// Update a device
-  Future<Map<String, dynamic>?> updateDevice(
-    int deviceId, {
-    String? name,
-    double? powerW,
-    bool? critical,
-  }) async {
-    try {
-      final body = <String, dynamic>{};
-      if (name != null) body['name'] = name;
-      if (powerW != null) body['power_w'] = powerW;
-      if (critical != null) body['critical'] = critical;
-      
-      final response = await _client.put(
-        Uri.parse('$baseUrl/me/devices/$deviceId'),
-        headers: _authHeaders,
-        body: json.encode(body),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      final error = json.decode(response.body);
-      return {'error': error['detail'] ?? 'Failed to update device'};
-    } catch (e) {
-      print('Error updating device: $e');
-      return {'error': 'Connection error: $e'};
-    }
-  }
-  
-  /// Delete a device
-  Future<Map<String, dynamic>?> deleteDevice(int deviceId) async {
-    try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/me/devices/$deviceId'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      final error = json.decode(response.body);
-      return {'error': error['detail'] ?? 'Failed to delete device'};
-    } catch (e) {
-      print('Error deleting device: $e');
-      return {'error': 'Connection error: $e'};
-    }
-  }
-  
-  /// Get today's energy summary
-  Future<Map<String, dynamic>?> getEnergyToday() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/energy/today'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching energy today: $e');
-      return null;
-    }
-  }
-  
-  /// Get energy history
-  Future<List<dynamic>?> getEnergyHistory({int days = 7}) async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/energy/history?days=$days'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as List<dynamic>;
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching energy history: $e');
-      return null;
-    }
-  }
-  
-  // ============================================================
-  // STATISTICS ENDPOINTS
-  // ============================================================
-  
-  /// Get consumption summary for a period
-  Future<Map<String, dynamic>?> getConsumptionSummary({String period = 'month'}) async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/stats/summary?period=$period'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching consumption summary: $e');
-      return null;
-    }
-  }
-  
-  /// Get top energy consuming devices
-  Future<Map<String, dynamic>?> getTopConsumers({String period = 'month', int limit = 10}) async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/stats/top-consumers?period=$period&limit=$limit'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching top consumers: $e');
-      return null;
-    }
-  }
-  
-  /// Get chart data for consumption visualization
-  Future<Map<String, dynamic>?> getChartData({
-    required String startDate,
-    required String endDate,
-  }) async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/stats/chart?start_date=$startDate&end_date=$endDate'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching chart data: $e');
-      return null;
-    }
-  }
-  
-  /// Get monthly comparison
-  Future<Map<String, dynamic>?> getMonthlyComparison() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/stats/comparison'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching monthly comparison: $e');
-      return null;
-    }
-  }
-  
-  /// Check API health
-  Future<bool> isApiAvailable() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/health'),
-      ).timeout(timeout);
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-  
-  // ============================================================
-  // P2P TRADING ENDPOINTS
-  // ============================================================
-  
-  /// Get trading preferences for my house
-  Future<Map<String, dynamic>?> getTradingPreferences() async {
-    if (_houseId == null) return null;
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/trading/preferences/$_houseId'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching trading preferences: $e');
-      return null;
-    }
-  }
-  
-  /// Update trading preferences
-  Future<Map<String, dynamic>?> updateTradingPreferences({
+  }) async =>
+      Device.fromJson(asMap(await client.post('/me/devices', body: {
+        'name': name,
+        'power_w': powerW,
+        'critical': critical,
+        'status_on': statusOn,
+      })));
+
+  Future<Device> updateDevice(int deviceId, {String? name, double? powerW, bool? critical, bool? statusOn}) async =>
+      Device.fromJson(asMap(await client.put('/me/devices/$deviceId', body: {
+        if (name != null) 'name': name,
+        if (powerW != null) 'power_w': powerW,
+        if (critical != null) 'critical': critical,
+        if (statusOn != null) 'status_on': statusOn,
+      })));
+
+  Future<void> deleteDevice(int deviceId) => client.delete('/me/devices/$deviceId');
+
+  Future<EnergyTotals> getEnergyToday() async => EnergyTotals.fromJson(asMap(await client.get('/me/energy/today')));
+
+  Future<EnergyChart> getEnergyChart(String period, {String? date}) async =>
+      EnergyChart.fromJson(asMap(await client.get('/me/energy/chart', query: {'period': period, 'date': date})));
+
+  Future<EnergyImpact> getEnergyImpact() async => EnergyImpact.fromJson(asMap(await client.get('/me/energy/impact')));
+
+  Future<ConsumptionSummary> getConsumptionSummary({String period = 'month'}) async =>
+      ConsumptionSummary.fromJson(asMap(await client.get('/stats/summary', query: {'period': period})));
+
+  Future<TopConsumersResponse> getTopConsumers({String period = 'month', int limit = 10}) async =>
+      TopConsumersResponse.fromJson(
+          asMap(await client.get('/stats/top-consumers', query: {'period': period, 'limit': limit})));
+
+  Future<ChartData> getStatsChart({required String startDate, required String endDate}) async => ChartData.fromJson(
+      asMap(await client.get('/stats/chart', query: {'start_date': startDate, 'end_date': endDate})));
+
+  Future<MonthlyComparison> getMonthlyComparison() async =>
+      MonthlyComparison.fromJson(asMap(await client.get('/stats/comparison')));
+
+  Future<TradingPrefs> getTradingPreferences() async =>
+      TradingPrefs.fromJson(asMap(await client.get('/trading/preferences/${_requireHouse()}')));
+
+  Future<TradingPrefs> updateTradingPreferences({
     bool? sellingEnabled,
     bool? buyingEnabled,
     String? priceMode,
     double? fixedPriceLeiKwh,
     double? discountPercent,
     double? minSellPriceLeiKwh,
-  }) async {
-    if (_houseId == null) return null;
-    try {
-      final body = <String, dynamic>{};
-      if (sellingEnabled != null) body['selling_enabled'] = sellingEnabled;
-      if (buyingEnabled != null) body['buying_enabled'] = buyingEnabled;
-      if (priceMode != null) body['price_mode'] = priceMode;
-      if (fixedPriceLeiKwh != null) body['fixed_price_lei_kwh'] = fixedPriceLeiKwh;
-      if (discountPercent != null) body['discount_percent'] = discountPercent;
-      if (minSellPriceLeiKwh != null) body['min_sell_price_lei_kwh'] = minSellPriceLeiKwh;
-      
-      final response = await _client.put(
-        Uri.parse('$baseUrl/trading/preferences/$_houseId'),
-        headers: _authHeaders,
-        body: json.encode(body),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      final error = json.decode(response.body);
-      return {'error': error['detail'] ?? 'Failed to update trading preferences'};
-    } catch (e) {
-      print('Error updating trading preferences: $e');
-      return {'error': 'Connection error: $e'};
-    }
-  }
-  
-  /// Get trading history
-  Future<Map<String, dynamic>?> getTradingHistory({int limit = 50, String? transactionType}) async {
-    if (_houseId == null) return null;
-    try {
-      var url = '$baseUrl/trading/history/$_houseId?limit=$limit';
-      if (transactionType != null) url += '&transaction_type=$transactionType';
-      
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching trading history: $e');
-      return null;
-    }
-  }
-  
-  /// Get trading statistics
-  Future<Map<String, dynamic>?> getTradingStats() async {
-    if (_houseId == null) return null;
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/trading/stats/$_houseId'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching trading stats: $e');
-      return null;
-    }
-  }
-  
-  // ============================================================
-  // WALLET ENDPOINTS
-  // ============================================================
-  
-  /// Get wallet info
-  Future<Map<String, dynamic>?> getWallet() async {
-    if (_houseId == null) return null;
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/wallet/$_houseId'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching wallet: $e');
-      return null;
-    }
-  }
-  
-  /// Get wallet transactions
-  Future<Map<String, dynamic>?> getWalletTransactions({int limit = 50, String? transactionType}) async {
-    if (_houseId == null) return null;
-    try {
-      var url = '$baseUrl/wallet/$_houseId/transactions?limit=$limit';
-      if (transactionType != null) url += '&transaction_type=$transactionType';
-      
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching wallet transactions: $e');
-      return null;
-    }
-  }
-  
-  /// Transfer energy to VPP reserve
-  Future<Map<String, dynamic>?> transferToVPP(double energyKwh) async {
-    if (_houseId == null) return null;
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/wallet/$_houseId/transfer-to-vpp'),
-        headers: _authHeaders,
-        body: json.encode({'energy_kwh': energyKwh}),
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      final error = json.decode(response.body);
-      return {'error': error['detail'] ?? 'Failed to transfer to VPP'};
-    } catch (e) {
-      print('Error transferring to VPP: $e');
-      return {'error': 'Connection error: $e'};
-    }
-  }
-  
-  // ============================================================
-  // OPCOM PRICE ENDPOINTS
-  // ============================================================
-  
-  /// Get OPCOM prices for a period
-  /// [period] - "1Z" (day), "1S" (week), "1L" (month), "6L", "1A"
-  /// [date] - Optional date in DD/MM/YYYY format
-  Future<Map<String, dynamic>?> getOpcomPrices({
-    String period = '1Z',
-    String? date,
-  }) async {
-    try {
-      var url = '$baseUrl/trading/opcom/prices?period=$period';
-      if (date != null) url += '&date=$date';
-      
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching OPCOM prices: $e');
-      return null;
-    }
-  }
-  
-  /// Get current OPCOM price
-  Future<Map<String, dynamic>?> getOpcomCurrentPrice() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/trading/opcom/current'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching current OPCOM price: $e');
-      return null;
-    }
-  }
-  
-  /// Get OPCOM price history
-  /// [days] - Number of days of history (1-365)
-  Future<Map<String, dynamic>?> getOpcomPriceHistory({int days = 7}) async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/trading/opcom/history?days=$days'),
-        headers: _authHeaders,
-      ).timeout(timeout);
+  }) async =>
+      TradingPrefs.fromJson(asMap(await client.put('/trading/preferences/${_requireHouse()}', body: {
+        if (sellingEnabled != null) 'selling_enabled': sellingEnabled,
+        if (buyingEnabled != null) 'buying_enabled': buyingEnabled,
+        if (priceMode != null) 'price_mode': priceMode,
+        if (fixedPriceLeiKwh != null) 'fixed_price_lei_kwh': fixedPriceLeiKwh,
+        if (discountPercent != null) 'discount_percent': discountPercent,
+        if (minSellPriceLeiKwh != null) 'min_sell_price_lei_kwh': minSellPriceLeiKwh,
+      })));
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching OPCOM price history: $e');
-      return null;
-    }
+  Future<List<Trade>> getTradingHistory({int limit = 50, String? transactionType, String? status}) async {
+    final data = asMap(await client.get('/trading/history/${_requireHouse()}',
+        query: {'limit': limit, 'transaction_type': transactionType, 'status': status}));
+    return asMapList(data['transactions']).map(Trade.fromJson).toList();
   }
 
-  // ============================================================
-  // SETTINGS ENDPOINTS
-  // ============================================================
+  Future<TradingStats> getTradingStats() async =>
+      TradingStats.fromJson(asMap(await client.get('/trading/stats/${_requireHouse()}')));
 
-  /// Get house settings (mode + backup reserve)
-  Future<Map<String, dynamic>?> getSettings() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/settings'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+  Future<Wallet> getWallet() async => Wallet.fromJson(asMap(await client.get('/wallet/${_requireHouse()}')));
+
+  Future<List<WalletTx>> getWalletTransactions({int limit = 50, String? transactionType}) async {
+    final data = asMap(await client
+        .get('/wallet/${_requireHouse()}/transactions', query: {'limit': limit, 'transaction_type': transactionType}));
+    return asMapList(data['transactions']).map(WalletTx.fromJson).toList();
   }
 
-  /// Update house settings (mode and/or backup reserve)
-  Future<Map<String, dynamic>?> updateSettings({
-    String? mode,
-    double? backupReservePercent,
-  }) async {
-    try {
-      final body = <String, dynamic>{};
-      if (mode != null) body['mode'] = mode;
-      if (backupReservePercent != null) body['backup_reserve_percent'] = backupReservePercent;
+  Future<VppTransferResult> transferToVpp(double energyKwh) async => VppTransferResult.fromJson(
+      asMap(await client.post('/wallet/${_requireHouse()}/transfer-to-vpp', body: {'energy_kwh': energyKwh})));
 
-      final response = await _client.put(
-        Uri.parse('$baseUrl/me/settings'),
-        headers: _authHeaders,
-        body: json.encode(body),
-      ).timeout(timeout);
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return {'error': json.decode(response.body)['detail'] ?? 'Failed to update settings'};
-    } catch (e) {
-      return {'error': 'Connection error: $e'};
-    }
-  }
-
-  // ============================================================
-  // ENERGY CHART & IMPACT ENDPOINTS
-  // ============================================================
-
-  /// Get energy chart data (solar/consumption/battery/grid over time)
-  /// [period] - "day", "week", or "month"
-  /// [date]   - "YYYY-MM-DD", defaults to today
-  Future<Map<String, dynamic>?> getEnergyChart(String period, {String? date}) async {
-    try {
-      final params = <String, String>{'period': period};
-      if (date != null) params['date'] = date;
-      final uri = Uri.parse('$baseUrl/me/energy/chart').replace(queryParameters: params);
-      final response = await _client.get(uri, headers: _authHeaders).timeout(timeout);
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Get energy impact data (source distribution, peak/off-peak, monthly savings)
-  Future<Map<String, dynamic>?> getEnergyImpact() async {
-    try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/me/energy/impact'),
-        headers: _authHeaders,
-      ).timeout(timeout);
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+  Future<SimPrices> getSimPrices() async => SimPrices.fromJson(asMap(await client.get('/sim/prices')));
 }
 
-/// Singleton instance
-final userApiService = UserApiService();
+final AuthState authState = AuthState();
+final ApiClient apiClient = ApiClient(auth: authState);
+final UserApiService userApiService = UserApiService(apiClient);

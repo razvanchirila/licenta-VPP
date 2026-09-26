@@ -3,28 +3,23 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_interface/models/solar_forecast_data.dart';
 
-/// Service for fetching solar production forecasts from forecast.solar API
-/// Implements caching to respect the 12 requests/hour rate limit
+/// Cached to respect the 12 requests/hour rate limit of forecast.solar.
 class SolarForecastService {
-  // Default parameters for Bacău installation
   static const double defaultLatitude = 46.5670;
   static const double defaultLongitude = 26.9146;
   static const double defaultDeclination = 35.0; // tilt angle
   static const double defaultAzimuth = 180.0; // south facing
-  static const double defaultKwp = 10.0; // 10 kW installed
+  static const double defaultKwp = 10.0;
   static const double defaultBatteryCapacityKwh = 20.0;
 
-  // Cache settings
   static const String _cacheKey = 'solar_forecast_cache';
   static const String _cacheTimestampKey = 'solar_forecast_timestamp';
   static const Duration _cacheDuration = Duration(hours: 6);
 
-  // Singleton
   static final SolarForecastService _instance = SolarForecastService._internal();
   factory SolarForecastService() => _instance;
   SolarForecastService._internal();
 
-  /// Build API URL with parameters
   String _buildApiUrl({
     double? lat,
     double? lon,
@@ -41,7 +36,6 @@ class SolarForecastService {
     return 'https://api.forecast.solar/estimate/$latitude/$longitude/$declination/$azimuth/$power';
   }
 
-  /// Check if cache is valid (less than 6 hours old)
   Future<bool> _isCacheValid() async {
     final prefs = await SharedPreferences.getInstance();
     final timestampStr = prefs.getString(_cacheTimestampKey);
@@ -53,7 +47,6 @@ class SolarForecastService {
     return DateTime.now().difference(timestamp) < _cacheDuration;
   }
 
-  /// Get cached data if available
   Future<SolarForecastData?> _getCachedData() async {
     final prefs = await SharedPreferences.getInstance();
     final cachedJson = prefs.getString(_cacheKey);
@@ -67,14 +60,12 @@ class SolarForecastService {
     }
   }
 
-  /// Save data to cache
   Future<void> _saveToCache(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cacheKey, jsonEncode(data));
     await prefs.setString(_cacheTimestampKey, DateTime.now().toIso8601String());
   }
 
-  /// Get cache timestamp
   Future<DateTime?> getCacheTimestamp() async {
     final prefs = await SharedPreferences.getInstance();
     final timestampStr = prefs.getString(_cacheTimestampKey);
@@ -82,7 +73,6 @@ class SolarForecastService {
     return DateTime.tryParse(timestampStr);
   }
 
-  /// Fetch forecast data (uses cache if valid, otherwise fetches from API)
   Future<SolarForecastResult> getForecast({
     double? lat,
     double? lon,
@@ -91,7 +81,6 @@ class SolarForecastService {
     double? kwp,
     bool forceRefresh = false,
   }) async {
-    // Check cache first (unless force refresh)
     if (!forceRefresh && await _isCacheValid()) {
       final cachedData = await _getCachedData();
       if (cachedData != null) {
@@ -104,10 +93,9 @@ class SolarForecastService {
       }
     }
 
-    // Fetch from API
     try {
       final url = _buildApiUrl(lat: lat, lon: lon, dec: dec, az: az, kwp: kwp);
-      final response = await http.get(Uri.parse(url));
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final jsonData = jsonDecode(response.body);
@@ -139,7 +127,6 @@ class SolarForecastService {
         );
       }
     } catch (e) {
-      // Network error - try to use cache
       final cachedData = await _getCachedData();
       if (cachedData != null) {
         final timestamp = await getCacheTimestamp();
@@ -158,7 +145,6 @@ class SolarForecastService {
   }
 }
 
-/// Result wrapper for forecast fetch operation
 class SolarForecastResult {
   final SolarForecastData? data;
   final String? error;
@@ -180,5 +166,4 @@ class SolarForecastResult {
   bool get hasError => error != null;
 }
 
-/// Global instance
 final solarForecastService = SolarForecastService();

@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Backend (HTTP) plus WeatherAPI and forecast.solar (HTTPS). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="flutter_interface"
         android:name="${applicationName}"

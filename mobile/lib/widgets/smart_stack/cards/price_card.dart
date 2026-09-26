@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/theme.dart';
 
-/// Card for displaying energy price (same style as TemperatureCard)
 class PriceCard extends StatelessWidget {
-  final double pricePerKwh;
+  final double? pricePerKwh;
   final bool isRising;
   final VoidCallback? onTap;
 
@@ -14,36 +14,37 @@ class PriceCard extends StatelessWidget {
     this.onTap,
   });
 
-  Color get _trendColor =>
-      isRising ? const Color(0xFFEF4444) : const Color(0xFF22C55E);
+  Color get _trendColor {
+    if (pricePerKwh == null) return AppColors.slate;
+    return isRising ? AppColors.red : AppColors.green;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final price = pricePerKwh;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: _trendColor.withOpacity(0.15),
+          color: _trendColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _trendColor.withOpacity(0.3),
+            color: _trendColor.withValues(alpha: 0.3),
             width: 1,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Trend icon
             Icon(
-              isRising
-                  ? Icons.trending_up_rounded
-                  : Icons.trending_down_rounded,
+              price == null
+                  ? Icons.remove_rounded
+                  : (isRising ? Icons.trending_up_rounded : Icons.trending_down_rounded),
               color: _trendColor,
               size: 24,
             ),
             const SizedBox(width: 8),
-            // Price and label
             Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,7 +55,7 @@ class PriceCard extends StatelessWidget {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Text(
-                      pricePerKwh.toStringAsFixed(2),
+                      price == null ? '--' : price.toStringAsFixed(2),
                       style: GoogleFonts.inter(
                         color: Colors.white,
                         fontSize: 24,
@@ -65,7 +66,7 @@ class PriceCard extends StatelessWidget {
                     Text(
                       'RON',
                       style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -73,9 +74,9 @@ class PriceCard extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  'Preț /kWh',
+                  price == null ? 'Preț indisponibil' : 'Preț import /kWh',
                   style: GoogleFonts.inter(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                   ),

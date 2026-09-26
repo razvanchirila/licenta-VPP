@@ -1,32 +1,18 @@
-# Analysis options for the VPP Simulator Flutter app
-# This file configures the analyzer, which statically analyzes Dart code to
-# check for errors, warnings, and lints.
-
-# include: package:flutter_lints/flutter.yaml
+# Analyzer configuration for the VPP mobile app.
 
 analyzer:
   exclude:
     - "**/*.g.dart"
-    - "**/*.freezed.dart"
-    - "**/generated_plugin_registrant.dart"
     - "build/**"
-    - "lib/generated/**"
-
-  strong-mode:
-    implicit-casts: false
-    implicit-dynamic: false
-
-  errors:
-    # Treat missing required parameters as errors
-    missing_required_param: error
-    # Treat missing return statements as errors
-    missing_return: error
-    # Treat invalid assignments as errors
-    invalid_assignment: error
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 linter:
   rules:
-    # Essential rules only
     - avoid_empty_else
     - avoid_relative_lib_imports
     - avoid_slow_async_io
@@ -35,81 +21,29 @@ linter:
     - close_sinks
     - empty_statements
     - hash_and_equals
-    - literal_only_boolean_expressions
-    - no_adjacent_strings_in_list
     - no_duplicate_case_values
-    - prefer_void_to_null
-    - test_types_in_equals
-    - throw_in_finally
     - unrelated_type_equality_checks
     - valid_regexps
-
-    # Basic style rules
     - always_declare_return_types
     - annotate_overrides
     - avoid_init_to_null
-    - avoid_null_checks_in_equality_operators
     - avoid_print
-    - avoid_return_types_on_setters
-    - avoid_shadowing_type_parameters
     - avoid_unnecessary_containers
     - await_only_futures
-    - camel_case_extensions
     - camel_case_types
-    - constant_identifier_names
     - curly_braces_in_flow_control_structures
     - empty_catches
-    - empty_constructor_bodies
     - file_names
-    - implementation_imports
-    - library_names
-    - library_prefixes
     - non_constant_identifier_names
-    - null_closures
-    - one_member_abstracts
-    - only_throw_errors
-    - overridden_fields
-    - package_prefixed_library_names
-    - parameter_assignments
-    - prefer_adjacent_string_concatenation
-    - prefer_collection_literals
-    - prefer_conditional_assignment
     - prefer_const_constructors
-    - prefer_const_constructors_in_immutables
-    - prefer_const_declarations
-    - prefer_contains
     - prefer_final_fields
-    - prefer_if_null_operators
-    - prefer_initializing_formals
-    - prefer_interpolation_to_compose_strings
     - prefer_is_empty
     - prefer_is_not_empty
-    - prefer_is_not_operator
-    - prefer_iterable_whereType
-    - prefer_null_aware_operators
     - prefer_single_quotes
-    - prefer_spread_collections
-    - recursive_getters
-    - slash_for_doc_comments
-    - type_init_formals
-    - unawaited_futures
-    - unnecessary_brace_in_string_interps
-    - unnecessary_const
-    - unnecessary_getters_setters
     - unnecessary_new
-    - unnecessary_null_aware_assignments
-    - unnecessary_null_in_if_null_operators
-    - unnecessary_overrides
-    - unnecessary_parenthesis
-    - unnecessary_statements
-    - unnecessary_string_interpolations
     - unnecessary_this
-    - use_full_hex_values_for_flutter_colors
-    - use_function_type_syntax_for_parameters
-    - use_rethrow_when_possible
-    - void_checks
-
-    # Flutter specific rules
     - use_key_in_widget_constructors
     - sized_box_for_whitespace
-    - avoid_web_libraries_in_flutter
+
+formatter:
+  page_width: 120

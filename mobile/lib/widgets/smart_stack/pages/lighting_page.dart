@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_interface/state/app_state.dart';
 import 'package:flutter_interface/widgets/smart_stack/cards/lighting_card.dart';
 
-/// Lighting page for SmartStack
-/// Contains master lighting control card
 class LightingPage extends StatefulWidget {
   const LightingPage({super.key});
 
@@ -34,7 +32,6 @@ class _LightingPageState extends State<LightingPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          // Lighting card
           LightingCard(
             allLightsOn: appState.allLightsOn,
             onToggle: () => appState.toggleAllLights(),
