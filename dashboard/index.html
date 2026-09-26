@@ -1,359 +1,173 @@
 <!DOCTYPE html>
 <html lang="ro">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VPP Simulator - Dashboard</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body>
-    <div class="container">
-      <!-- Header (Fixed) -->
-      <header class="header">
-        <div class="header-content">
-          <h1>⚡ Virtual Power Plant Dashboard</h1>
-          <div class="header-info">
-            <div class="sim-time-display">
-              <span class="sim-time-icon">🕐</span>
-              <span class="sim-time-label">Sim Time:</span>
-              <span class="sim-time-value" id="headerSimTime">--:--</span>
-              <span class="sim-date-value" id="headerSimDate">----/--/--</span>
-            </div>
-            <div class="status-indicator">
-              <span class="status-dot" id="statusDot"></span>
-              <span id="statusText">Checking...</span>
-            </div>
-          </div>
-        </div>
-      </header>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; object-src 'none'">
+  <title>Panou operator VPP</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
 
-      <!-- Main Content -->
-      <div class="main-content">
-        <!-- Control Panel -->
-        <section class="card control-panel">
-          <h2>🎮 Control Panel</h2>
-          <div class="control-buttons">
-            <button class="btn btn-primary" onclick="initializeVPP()">
-              🚀 Initialize VPP
-            </button>
-            <button class="btn btn-warning" onclick="resetSimulation()">
-              🔄 Reset
-            </button>
-            <button
-              class="btn"
-              style="
-                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                color: white;
-              "
-              onclick="showPriceModal()"
-            >
-              💰 Prices
-            </button>
-          </div>
+<section id="login" class="login" hidden>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <h1>Panou operator VPP</h1>
+    <p class="muted">Acces permis doar conturilor cu rol de administrator.</p>
+    <label for="loginUser">Utilizator</label>
+    <input id="loginUser" name="username" type="text" autocomplete="username" required maxlength="50">
+    <label for="loginPass">Parolă</label>
+    <input id="loginPass" name="password" type="password" autocomplete="current-password" required maxlength="72">
+    <p id="loginError" class="error" role="alert" hidden></p>
+    <button id="loginBtn" type="submit" class="btn btn-primary">Autentificare</button>
+  </form>
+</section>
 
-          <div
-            style="
-              margin-top: 16px;
-              padding-top: 16px;
-              border-top: 1px solid #e5e7eb;
-            "
-          >
-            <h3 style="font-size: 14px; margin-bottom: 12px; color: #64748b">
-              ⏱️ Simulation Speed
-            </h3>
-            <div class="control-buttons">
-              <button
-                class="btn btn-sm speed-btn"
-                onclick="setSimSpeed(1)"
-                id="speed1"
-              >
-                1s
-              </button>
-              <button
-                class="btn btn-sm speed-btn"
-                onclick="setSimSpeed(2)"
-                id="speed2"
-              >
-                2s
-              </button>
-              <button
-                class="btn btn-sm speed-btn active"
-                onclick="setSimSpeed(5)"
-                id="speed5"
-              >
-                5s
-              </button>
-              <button
-                class="btn btn-sm speed-btn"
-                onclick="setSimSpeed(10)"
-                id="speed10"
-              >
-                10s
-              </button>
-              <button
-                class="btn btn-sm"
-                onclick="pauseSimulation()"
-                id="pauseBtn"
-              >
-                ⏸️ Pause
-              </button>
-              <button
-                class="btn btn-sm btn-success"
-                onclick="resumeSimulation()"
-                id="resumeBtn"
-                style="display: none"
-              >
-                ▶️ Resume
-              </button>
-            </div>
-            <p style="font-size: 11px; color: #94a3b8; margin-top: 8px">
-              Current: <span id="currentSpeed">5</span>s real = 10 min
-              simulation
-            </p>
-          </div>
-        </section>
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1>Panou operator VPP</h1>
+      <span id="connDot" class="dot dot-off" title="WebSocket"></span>
+      <span id="connText" class="muted">deconectat</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock"><span id="simDate">----------</span> <strong id="simTime">--:--</strong></span>
+      <span id="simState" class="badge">necunoscut</span>
+      <span id="userName" class="muted"></span>
+      <button id="logoutBtn" class="btn btn-sm">Ieșire</button>
+    </div>
+  </header>
 
-        <!-- VPP Overview -->
-        <section class="card vpp-overview">
-          <h2>🏘️ VPP Overview</h2>
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-icon">🏠</div>
-              <div class="stat-value" id="totalHouses">-</div>
-              <div class="stat-label">Total Houses</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">🔋</div>
-              <div class="stat-value" id="housesWithBattery">-</div>
-              <div class="stat-label">With Batteries</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">☀️</div>
-              <div class="stat-value" id="totalPvCapacity">-</div>
-              <div class="stat-label">Total PV (kW)</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">⚡</div>
-              <div class="stat-value" id="batteryCapacity">-</div>
-              <div class="stat-label">Battery Cap (kWh)</div>
-            </div>
-          </div>
-        </section>
+  <main class="grid">
 
-        <!-- House Control -->
-        <section class="card house-control">
-          <h2>🏠 House Control</h2>
-          <div class="house-selector">
-            <label for="houseSelect">Select House:</label>
-            <select id="houseSelect" onchange="loadHouseDetails()">
-              <option value="">-- Select a house --</option>
-            </select>
-            <button class="btn btn-sm" onclick="loadHouses()">
-              🔄 Refresh
-            </button>
-          </div>
-          <div id="houseDetails" class="house-details">
-            <p class="placeholder">Select a house to view details</p>
-          </div>
-        </section>
-
-        <!-- Live VPP Stats -->
-        <section class="card charts-section">
-          <h2>📈 Live VPP Stats</h2>
-          <div id="liveStatsContainer">
-            <div class="live-stats-grid">
-              <div class="live-stat" style="border-color: #f59e0b">
-                <div class="live-stat-icon">☀️</div>
-                <div class="live-stat-value" id="livePvProd">0.00</div>
-                <div class="live-stat-label">PV Production (kW)</div>
-              </div>
-              <div class="live-stat" style="border-color: #ef4444">
-                <div class="live-stat-icon">⚡</div>
-                <div class="live-stat-value" id="liveTotalLoad">0.00</div>
-                <div class="live-stat-label">Total Load (kW)</div>
-              </div>
-              <div class="live-stat" style="border-color: #10b981">
-                <div class="live-stat-icon">📥</div>
-                <div class="live-stat-value" id="liveGridImport">0.00</div>
-                <div class="live-stat-label">Grid Import (kW)</div>
-              </div>
-              <div class="live-stat" style="border-color: #06b6d4">
-                <div class="live-stat-icon">📤</div>
-                <div class="live-stat-value" id="liveGridExport">0.00</div>
-                <div class="live-stat-label">Grid Export (kW)</div>
-              </div>
-              <div class="live-stat" style="border-color: #8b5cf6">
-                <div class="live-stat-icon">🔄</div>
-                <div class="live-stat-value" id="liveInternalTrade">0.00</div>
-                <div class="live-stat-label">Internal Trading (kW)</div>
-              </div>
-              <div class="live-stat" style="border-color: #ec4899">
-                <div class="live-stat-icon">🔋</div>
-                <div class="live-stat-value" id="liveAvgSoc">0.0</div>
-                <div class="live-stat-label">Avg Battery SOC (%)</div>
-              </div>
-            </div>
-            <div
-              id="neighborhoodState"
-              style="
-                margin-top: 16px;
-                padding: 12px;
-                background: #f8fafc;
-                border-radius: 8px;
-                text-align: center;
-              "
-            >
-              <span style="font-weight: 600">Neighborhood State:</span>
-              <span
-                id="neighborhoodStateValue"
-                style="margin-left: 8px; font-weight: 700"
-                >--</span
-              >
-              <span style="margin-left: 16px; color: #64748b">Price:</span>
-              <span id="currentPrice" style="font-weight: 600">--</span> lei/kWh
-            </div>
-          </div>
-        </section>
-
-        <!-- Configuration Settings -->
-        <section class="card config-section">
-          <h2>⚙️ Configuration Settings</h2>
-          <div class="config-content">
-            <div class="config-tabs">
-              <button
-                class="config-tab active"
-                onclick="showConfigTab('prices', this)"
-              >
-                💰 Prices
-              </button>
-              <button class="config-tab" onclick="showConfigTab('grid', this)">
-                🔌 Grid
-              </button>
-              <button
-                class="config-tab"
-                onclick="showConfigTab('battery', this)"
-              >
-                🔋 Battery
-              </button>
-              <button class="config-tab" onclick="showConfigTab('pv', this)">
-                ☀️ PV
-              </button>
-              <button
-                class="config-tab"
-                onclick="showConfigTab('trading', this)"
-              >
-                🔄 Trading
-              </button>
-            </div>
-
-            <div id="configTabContent" class="config-tab-content">
-              <p class="placeholder">Loading configuration...</p>
-            </div>
-
-            <div class="config-actions">
-              <button class="btn btn-success" onclick="saveConfig()">
-                💾 Save Configuration
-              </button>
-              <button class="btn btn-warning" onclick="resetConfig()">
-                🔄 Reset to Defaults
-              </button>
-            </div>
-          </div>
-        </section>
+    <section class="card">
+      <h2>Simulare</h2>
+      <dl class="kv">
+        <dt>Controller</dt><dd id="stController">–</dd>
+        <dt>Date</dt><dd id="stData">–</dd>
+        <dt>Pas simulat</dt><dd id="stDt">–</dd>
+        <dt>Pași totali</dt><dd id="stSteps">–</dd>
+        <dt>Pasul zilei</dt><dd id="stStepOfDay">–</dd>
+        <dt>Case</dt><dd id="stHouses">–</dd>
+        <dt>Clienți WS</dt><dd id="stClients">–</dd>
+      </dl>
+      <p id="stError" class="error" hidden></p>
+      <div class="actions">
+        <button id="btnStart" class="btn btn-primary">Pornește</button>
+        <button id="btnStop" class="btn">Oprește</button>
+        <button id="btnPause" class="btn">Pauză</button>
+        <button id="btnResume" class="btn">Reia</button>
+        <button id="btnStep" class="btn">Un pas</button>
+        <button id="btnReset" class="btn btn-danger">Reset</button>
       </div>
-
-      <!-- Footer -->
-      <footer class="footer">
-        <p>
-          VPP Simulator © 2025 | API:
-          <span id="apiUrl">http://localhost:8000</span>
-        </p>
-      </footer>
-    </div>
-
-    <!-- Toast Notifications -->
-    <div id="toastContainer" class="toast-container"></div>
-
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay" style="display: none">
-      <div class="spinner"></div>
-      <p id="loadingText">Loading...</p>
-    </div>
-
-    <!-- Edit Device Modal -->
-    <div id="editDeviceModal" class="modal" style="display: none">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>✏️ Edit Device</h3>
-          <button class="modal-close" onclick="closeEditModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label for="editDeviceName">Device Name:</label>
-            <input
-              type="text"
-              id="editDeviceName"
-              class="form-input"
-              placeholder="e.g., Frigider"
-            />
-          </div>
-          <div class="form-group">
-            <label for="editDevicePower">Power (Watts):</label>
-            <input
-              type="number"
-              id="editDevicePower"
-              class="form-input"
-              placeholder="e.g., 150"
-              min="1"
-            />
-          </div>
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input type="checkbox" id="editDeviceCritical" />
-              <span>Critical Device (Always On)</span>
-            </label>
-          </div>
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input type="checkbox" id="editDeviceStatus" />
-              <span>Currently On</span>
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="closeEditModal()">
-            Cancel
-          </button>
-          <button class="btn btn-primary" onclick="saveDeviceChanges()">
-            💾 Save Changes
-          </button>
-        </div>
+      <div class="inline-form">
+        <label for="speedInput">Secunde reale per pas</label>
+        <input id="speedInput" type="number" min="0.2" max="60" step="0.1">
+        <button id="btnSpeed" class="btn btn-sm">Aplică</button>
       </div>
-    </div>
+    </section>
 
-    <!-- Price Modal -->
-    <div id="priceModal" class="modal" style="display: none">
-      <div class="modal-content" style="max-width: 800px">
-        <div class="modal-header">
-          <h3>💰 Today's Electricity Prices</h3>
-          <button class="modal-close" onclick="closePriceModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <div id="priceModalContent">
-            <div style="text-align: center; padding: 40px">
-              <div class="spinner" style="margin: 0 auto"></div>
-              <p style="margin-top: 16px; color: #64748b">Loading prices...</p>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="closePriceModal()">
-            Close
-          </button>
-        </div>
+    <section class="card">
+      <h2>Comunitate <span class="muted small">(pasul curent)</span></h2>
+      <div class="kpis">
+        <div class="kpi"><span class="kpi-label">Producție PV</span><span class="kpi-value"><span id="kPv">–</span> kW</span></div>
+        <div class="kpi"><span class="kpi-label">Consum</span><span class="kpi-value"><span id="kLoad">–</span> kW</span></div>
+        <div class="kpi"><span class="kpi-label">Import rețea</span><span class="kpi-value"><span id="kImp">–</span> kW</span></div>
+        <div class="kpi"><span class="kpi-label">Export rețea</span><span class="kpi-value"><span id="kExp">–</span> kW</span></div>
+        <div class="kpi"><span class="kpi-label">Schimb P2P</span><span class="kpi-value"><span id="kP2p">–</span> kW</span></div>
+        <div class="kpi"><span class="kpi-label">SOC mediu</span><span class="kpi-value"><span id="kSoc">–</span> %</span></div>
+        <div class="kpi"><span class="kpi-label">Preț import</span><span class="kpi-value"><span id="kPrice">–</span> lei/kWh</span></div>
+        <div class="kpi"><span class="kpi-label">Preț P2P</span><span class="kpi-value"><span id="kPriceP2p">–</span> lei/kWh</span></div>
       </div>
-    </div>
+      <h3>Ziua simulată <span id="todayDate" class="muted small"></span></h3>
+      <dl class="kv">
+        <dt>Energie PV</dt><dd><span id="tPv">–</span> kWh</dd>
+        <dt>Consum</dt><dd><span id="tLoad">–</span> kWh</dd>
+        <dt>Import / export</dt><dd><span id="tImp">–</span> / <span id="tExp">–</span> kWh</dd>
+        <dt>Volum P2P</dt><dd><span id="tP2p">–</span> kWh</dd>
+        <dt>Cost net rețea</dt><dd><span id="tCost">–</span> lei</dd>
+        <dt>Autoconsum / autonomie</dt><dd><span id="tSc">–</span> / <span id="tSs">–</span></dd>
+        <dt>Tranzacții decontate</dt><dd><span id="tTrades">–</span> (<span id="tTradesLei">–</span> lei)</dd>
+      </dl>
+    </section>
 
-    <script src="/static/app.js"></script>
-  </body>
+    <section class="card wide">
+      <h2>Case</h2>
+      <div class="table-wrap">
+        <table class="table" id="housesTable">
+          <thead>
+            <tr>
+              <th>Casa</th><th>Utilizator</th><th>Mod</th><th>SOC</th><th>PV</th><th>Consum</th>
+              <th>Import</th><th>Export</th><th>P2P</th><th>Sold</th>
+            </tr>
+          </thead>
+          <tbody id="housesBody"></tbody>
+        </table>
+      </div>
+      <p class="muted small">Puteri în kW, sold în lei, SOC în %. P2P: pozitiv = cumpără, negativ = vinde. Clic pe un rând pentru detalii.</p>
+    </section>
+
+    <section class="card wide" id="houseCard" hidden>
+      <div class="card-head">
+        <h2 id="houseTitle">Casa</h2>
+        <button id="houseClose" class="btn btn-sm">Închide</button>
+      </div>
+      <div id="houseBody"></div>
+    </section>
+
+    <section class="card">
+      <h2>Prețuri azi <span class="muted small">(lei/kWh)</span></h2>
+      <div id="priceChart" class="chart"></div>
+      <div class="legend">
+        <span><i class="sw sw-imp"></i> import</span>
+        <span><i class="sw sw-exp"></i> export</span>
+        <span><i class="sw sw-p2p"></i> P2P</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tranzacții P2P recente</h2>
+      <div class="table-wrap">
+        <table class="table small-table">
+          <thead><tr><th>Ora</th><th>Vânzător</th><th>Cumpărător</th><th>kWh</th><th>lei/kWh</th><th>Total</th><th>Stare</th></tr></thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card wide">
+      <h2>Configurație</h2>
+      <form id="configForm" class="config-grid">
+        <label for="cfgController">Controller</label>
+        <select id="cfgController" name="controller"></select>
+        <label for="cfgTick">Secunde reale per pas</label>
+        <input id="cfgTick" name="tick_seconds" type="number" min="0.2" max="60" step="0.1">
+        <label for="cfgImport">Import maxim rețea (kW)</label>
+        <input id="cfgImport" name="import_max_kw" type="number" min="0" step="1">
+        <label for="cfgExport">Export maxim rețea (kW)</label>
+        <input id="cfgExport" name="export_max_kw" type="number" min="0" step="1">
+        <label for="cfgLine">Limită linie internă (kW)</label>
+        <input id="cfgLine" name="internal_line_kw" type="number" min="0" step="1">
+        <label for="cfgP2p">Factor preț P2P (× preț import)</label>
+        <input id="cfgP2p" name="p2p_price_factor" type="number" min="0.01" max="1" step="0.01">
+        <label for="cfgMinBal">Sold minim pentru P2P (lei)</label>
+        <input id="cfgMinBal" name="min_p2p_balance_lei" type="number" min="0" step="1">
+        <label for="cfgSeed">Seed scenariu</label>
+        <input id="cfgSeed" name="seed" type="number" min="0" step="1">
+        <div class="config-actions">
+          <button type="submit" class="btn btn-primary">Salvează</button>
+          <button type="button" id="cfgReset" class="btn">Valori implicite</button>
+          <span class="muted small">Modificările se aplică de la pasul următor.</span>
+        </div>
+      </form>
+    </section>
+
+  </main>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
 </html>
