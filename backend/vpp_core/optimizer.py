@@ -31,7 +31,7 @@ SOC_MARGIN = 1e-4  # kWh kept away from the SOC limits, absorbs solver tolerance
 class LPWeights:
     """Objective coefficients, lei/kWh unless stated."""
 
-    deg_cost: float = 0.02   # battery wear per kWh of throughput; see backend/data/README.md
+    deg_cost: float = 0.20   # battery wear per kWh of throughput (Deye SE-F16 warranty); see backend/data/README.md
     voll: float = 10.0       # value of lost load
     eps: float = 1e-4        # tie-breaker against pointless curtailment / P2P circulation
     peak_cost: float = 0.0   # lei/kW on the maximum community import (0 = off)
@@ -223,6 +223,22 @@ def _add_community_limits(builder: _LPBuilder, var: dict[str, np.ndarray], grid:
             builder.add_rows(_sum_over_houses(var[flow], 1), -INF, limit)
 
 
+def _add_inverter_limits(builder: _LPBuilder, var: dict[str, np.ndarray], community: CommunityParams,
+                         pv: np.ndarray) -> None:
+    # (pv - curtail) + dis - ch <= inv  and  ch - dis - (pv - curtail) <= inv, per house and step
+    limited = np.array([np.isfinite(house.inverter_kw) for house in community.houses])
+    if not limited.any():
+        return
+    inverter = np.array([house.inverter_kw for house in community.houses])[limited][:, None]
+    rows = np.flatnonzero(limited)
+    builder.add_rows(
+        [(var["curtail"][rows], -1), (var["dis"][rows], 1), (var["ch"][rows], -1)], -INF, inverter - pv[rows],
+    )
+    builder.add_rows(
+        [(var["curtail"][rows], 1), (var["dis"][rows], -1), (var["ch"][rows], 1)], -INF, inverter + pv[rows],
+    )
+
+
 def _add_peak_charge(
     builder: _LPBuilder, var: dict[str, np.ndarray], weights: LPWeights, peak_floor: float
 ) -> np.ndarray | None:
@@ -257,6 +273,7 @@ def solve_dispatch(
     _add_node_balance(builder, var, pv, load)
     _add_battery_dynamics(builder, var, soc, battery, dt_h)
     _add_community_limits(builder, var, community.grid)
+    _add_inverter_limits(builder, var, community, pv)
     peak = _add_peak_charge(builder, var, weights, peak_floor)
 
     values, objective, status = builder.solve()

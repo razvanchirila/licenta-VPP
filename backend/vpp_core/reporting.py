@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -32,6 +33,24 @@ SEASON_STARTS_REAL = {"iarna": date(2023, 1, 10), "primavara": date(2023, 4, 10)
 COLORS = {
     "fara_baterie": "#2a78d6", "baterie_locala": "#eb6834", "vpp_reguli": "#1baf7a",
     "mpc": "#eda100", "mpc_varf": "#e87ba4", "optim_lp": "#008300",
+}
+# controller name (code, CSV) -> what the reader sees; all are control strategies on the same neighbourhood
+LABELS = {
+    "fara_baterie": "doar PV (bateria nefolosită)",
+    "baterie_locala": "baterie individuală",
+    "vpp_reguli": "VPP cu reguli",
+    "vpp_reguli_p2p_intai": "VPP cu reguli, P2P întâi",
+    "vpp_reguli_spec_alpha": "VPP cu reguli (α din specificație)",
+    "mpc": "VPP optimizat (MPC)",
+    "mpc_varf": "VPP optimizat (MPC) + taxă de vârf",
+    "optim_lp": "optim teoretic (LP, prognoză perfectă)",
+}
+SHORT_LABELS = {
+    **LABELS,
+    "fara_baterie": "doar PV",
+    "vpp_reguli_spec_alpha": "VPP cu reguli (α)",
+    "mpc_varf": "MPC + taxă de vârf",
+    "optim_lp": "optim teoretic",
 }
 INK, MUTED, GRID = "#0b0b0b", "#898781", "#e1e0d9"
 
@@ -81,6 +100,17 @@ def write_csv(rows: list[dict], keys: list[str], path: Path) -> None:
             writer.writerow({key: format_value(row[key]) for key in keys})
 
 
+def read_csv(path: Path, text_keys: tuple[str, ...] = ("season", "controller", "eticheta")) -> list[dict]:
+    """Inverse of write_csv: text columns stay text, "" becomes None, everything else float."""
+    def parse(key: str, value: str):
+        if key in text_keys:
+            return value
+        return None if value == "" else float(value)
+
+    with path.open(encoding="utf-8") as file:
+        return [{key: parse(key, value) for key, value in row.items()} for row in csv.DictReader(file)]
+
+
 def add_common_arguments(parser: argparse.ArgumentParser, default_seeds: int) -> None:
     parser.add_argument("--seeds", type=int, default=default_seeds, help="numar de seed-uri (0 .. N-1)")
     parser.add_argument("--days", type=int, default=7)
@@ -93,6 +123,12 @@ def add_common_arguments(parser: argparse.ArgumentParser, default_seeds: int) ->
     parser.add_argument(
         "--deg", type=float, default=None, help="cost de degradare baterie lei/kWh pentru LP/MPC (implicit LPWeights)"
     )
+
+
+def utf8_console() -> None:
+    """Windows pipes default to cp1252, which cannot print the Romanian labels."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 def output_dir(args: argparse.Namespace) -> Path:

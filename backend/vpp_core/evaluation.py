@@ -18,6 +18,7 @@ from vpp_core.params import default_community
 from vpp_core.reporting import (
     COLORS,
     INK,
+    LABELS,
     MUTED,
     SEASON_STARTS_REAL,
     SEASONS,
@@ -25,22 +26,17 @@ from vpp_core.reporting import (
     make_scenario,
     output_dir,
     plot_style,
+    read_csv,
     run_parallel,
     season_index,
+    utf8_console,
     weights,
     write_csv,
 )
 from vpp_core.simulator import simulate
 
 CONTROLLERS = ("fara_baterie", "baterie_locala", "vpp_reguli", "mpc", "mpc_varf", "optim_lp")
-CONTROLLER_LABELS = {
-    "fara_baterie": "fără baterie",
-    "baterie_locala": "baterie locală",
-    "vpp_reguli": "VPP reguli",
-    "mpc": "MPC",
-    "mpc_varf": "MPC + cost vârf",
-    "optim_lp": "LP (prognoză perfectă)",
-}
+TS_CONTROLLERS = ("vpp_reguli", "mpc")   # the two columns of the time-series plot
 
 # lei/kW of weekly peak import for "mpc_varf": ~3 kWh at the dearest hour per extra kW,
 # enough to spread night charging over the cheap zone without forbidding arbitrage (see pareto.py)
@@ -102,11 +98,12 @@ def run_all(n_seeds: int, n_days: int, dt_h: float, workers: int | None,
         for seed in range(n_seeds)
     ]
     if TS_SEED >= n_seeds:   # extra runs for the time-series plot only
-        tasks += [
-            (TS_SEASON, TS_SEED, controller, n_days, dt_h, real, deg_cost)
-            for controller in ("vpp_reguli", "mpc")
-        ]
+        tasks += timeseries_tasks(n_days, dt_h, real, deg_cost)
     return run_parallel(run_one, tasks, _describe, workers)
+
+
+def timeseries_tasks(n_days: int, dt_h: float, real: bool, deg_cost: float | None) -> list[tuple]:
+    return [(TS_SEASON, TS_SEED, controller, n_days, dt_h, real, deg_cost) for controller in TS_CONTROLLERS]
 
 
 def write_metrics_csv(rows: list[dict], path: Path) -> None:
@@ -144,33 +141,40 @@ def write_summary_csv(summary: dict, path: Path) -> None:
     write_csv(list(summary.values()), keys, path)
 
 
+def read_summary_csv(path: Path) -> dict[tuple[str, str], dict]:
+    rows = read_csv(path)
+    for row in rows:
+        row["n"] = int(row["n"])
+    return {(row["season"], row["controller"]): row for row in rows}
+
+
 def _mean_std(stats: dict, metric: str, fmt: str) -> str:
     return f"{stats[metric + '_mean']:{fmt}} +- {stats[metric + '_std']:{fmt}}"
 
 
 def print_summary(summary: dict) -> None:
-    print(f"\n{'anotimp':<10} {'strategie':<15} {'cost [lei]':>16} {'SSR':>14} {'SCR':>14} {'varf import [kW]':>18}")
+    print(f"\n{'anotimp':<10} {'strategie':<40} {'cost [lei]':>16} {'SSR':>14} {'SCR':>14} {'varf import [kW]':>18}")
     for (season, controller), stats in summary.items():
-        print(f"{season:<10} {controller:<15} {_mean_std(stats, 'cost_lei', '6.1f'):>16} "
+        print(f"{season:<10} {LABELS[controller]:<40} {_mean_std(stats, 'cost_lei', '6.1f'):>16} "
               f"{_mean_std(stats, 'ssr', '4.2f'):>14} "
               f"{_mean_std(stats, 'scr', '4.2f'):>14} {_mean_std(stats, 'peak_import_kw', '5.1f'):>18}")
 
 
 def grouped_bar(summary: dict, metric: str, ylabel: str, path: Path, scale: float = 1.0) -> None:
     plt = plot_style()
-    fig, ax = plt.subplots(figsize=(8, 3.8))
+    fig, ax = plt.subplots(figsize=(8, 4.3))
     n_bars, width = len(CONTROLLERS), 0.8 / len(CONTROLLERS)
     x = np.arange(len(SEASONS))
     for j, controller in enumerate(CONTROLLERS):
         means = [summary[(season, controller)][f"{metric}_mean"] * scale for season, _, _ in SEASONS]
         stds = [summary[(season, controller)][f"{metric}_std"] * scale for season, _, _ in SEASONS]
         ax.bar(x + (j - (n_bars - 1) / 2) * width, means, width * 0.92, yerr=stds, color=COLORS[controller],
-               label=CONTROLLER_LABELS[controller], error_kw={"ecolor": MUTED, "elinewidth": 0.8, "capsize": 2})
+               label=LABELS[controller], error_kw={"ecolor": MUTED, "elinewidth": 0.8, "capsize": 2})
     ax.set_xticks(x, [label for _, label, _ in SEASONS])
     ax.set_ylabel(ylabel)
     ax.grid(axis="x", visible=False)
     ax.axhline(0, color=MUTED, linewidth=0.8)
-    ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.12))
+    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, -0.12))
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -184,14 +188,14 @@ def timeseries_plot(results: list[dict], dt_h: float, path: Path, real: bool = F
     hours = (np.arange(n_steps) + 0.5) * dt_h
     fig, axes = plt.subplots(2, 2, figsize=(10, 5.2), sharex="col", sharey="row",
                              gridspec_kw={"height_ratios": [2.2, 1]})
-    for col, controller in enumerate(("vpp_reguli", "mpc")):
+    for col, controller in enumerate(TS_CONTROLLERS):
         series = series_of[controller]
         top, bottom = axes[0, col], axes[1, col]
         top.plot(hours, series["pv_kw"][:n_steps], color="#eda100", lw=1.4, label="PV disponibil")
         top.plot(hours, series["load_kw"][:n_steps], color="#2a78d6", lw=1.4, label="Consum")
         top.plot(hours, series["imp_kw"][:n_steps], color="#eb6834", lw=1.4, label="Import din rețea")
         bottom.plot(hours, series["soc_kwh"][:n_steps], color="#1baf7a", lw=1.4, label="Energie stocată (total)")
-        top.set_title(CONTROLLER_LABELS[controller], fontsize=10, color=INK, loc="left")
+        top.set_title(LABELS[controller], fontsize=10, color=INK, loc="left")
         bottom.set_xlabel("Ora [h]")
         bottom.set_xticks(np.arange(0, TS_DAYS * 24 + 1, 6))
         top.set_xlim(0, TS_DAYS * 24)
@@ -217,15 +221,23 @@ def make_charts(summary: dict, results: list[dict], n_days: int, dt_h: float, ou
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    utf8_console()
     add_common_arguments(parser, default_seeds=5)
+    parser.add_argument("--plot-only", action="store_true",
+                        help="doar graficele, din summary.csv existent; ruleaza doar cele 2 simulari din serie_timp")
     args = parser.parse_args(argv)
     out = output_dir(args)
 
-    results = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg)
-    rows = [r["metrics"] for r in results if r["metrics"]["seed"] < args.seeds]
-    summary = summarize(rows, args.seeds)
-    write_metrics_csv(rows, out / "metrics.csv")
-    write_summary_csv(summary, out / "summary.csv")
+    if args.plot_only:
+        summary = read_summary_csv(out / "summary.csv")
+        results = run_parallel(run_one, timeseries_tasks(args.days, args.dt, args.real, args.deg), _describe,
+                               args.workers)
+    else:
+        results = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg)
+        rows = [r["metrics"] for r in results if r["metrics"]["seed"] < args.seeds]
+        summary = summarize(rows, args.seeds)
+        write_metrics_csv(rows, out / "metrics.csv")
+        write_summary_csv(summary, out / "summary.csv")
     make_charts(summary, results, args.days, args.dt, out, args.real)
     print_summary(summary)
     print(f"\nRezultate scrise in {out}")

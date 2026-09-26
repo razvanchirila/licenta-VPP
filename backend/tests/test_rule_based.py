@@ -27,20 +27,20 @@ def one_house(**kw):
 # --- regressions -------------------------------------------------------------------
 
 def test_regression_charge_power_budget_shared_by_pv_and_arbitrage():
-    """Old code: 5 kW from PV + 5 kW from grid on a 5 kW battery, and 2 kWh lost."""
-    c = one_house(mode="Profit", initial_soc_ratio=0.6)
-    sc = make_scenario(const(1, 24, 9.0), const(1, 24, 1.0), price_import=RISING)
+    """Old code: full power from PV + full power from grid on the same battery, and the surplus lost."""
+    c = one_house(mode="Profit", initial_soc_ratio=0.2)
+    sc = make_scenario(const(1, 24, 10.0), const(1, 24, 1.0), price_import=RISING)
     res = simulate(c, sc, RuleBasedController(apply_alpha=False))
     f = res.flows
-    assert f["ch"][0, 0] == pytest.approx(5.0)
-    assert f["imp"][0, 0] == pytest.approx(0.0)       # no budget left for grid charging
-    assert f["exp"][0, 0] == pytest.approx(3.0)
-    assert res.soc_kwh[0, 1] - res.soc_kwh[0, 0] == pytest.approx(5.0 * 0.95)
+    assert f["ch"][0, 0] == pytest.approx(8.0)          # one SE-F16 module: 8 kW
+    assert f["imp"][0, 0] == pytest.approx(0.0)         # no budget left for grid charging
+    assert f["exp"][0, 0] == pytest.approx(1.0)
+    assert res.soc_kwh[0, 1] - res.soc_kwh[0, 0] == pytest.approx(8.0 * 0.95)
 
 
 def test_regression_import_limit_applied_before_state_changes():
     """Old code: batteries kept energy bought above the limit; unserved load not reported."""
-    houses = tuple(HouseParams(id=i, battery=BatteryParams(), mode="Profit", initial_soc_ratio=0.2) for i in range(3))
+    houses = tuple(HouseParams(id=i, battery=BatteryParams(), mode="Profit", initial_soc_ratio=0.1) for i in range(3))
     c = CommunityParams(houses=houses, grid=GridParams(import_max_kw=5.0))
     sc = make_scenario(const(3, 24, 0.0), const(3, 24, 3.0), price_import=RISING)
     res = simulate(c, sc, RuleBasedController(apply_alpha=False))
@@ -53,11 +53,11 @@ def test_regression_import_limit_applied_before_state_changes():
 
 def test_regression_house_outside_p2p_still_uses_battery_and_export():
     """Old code: a non-selling house with SOC >= 50% curtailed its whole surplus."""
-    c = one_house(p2p_enabled=False, initial_soc_ratio=0.6)
-    sc = make_scenario(const(1, 24, 9.0), const(1, 24, 1.0))
+    c = one_house(p2p_enabled=False, initial_soc_ratio=0.2)
+    sc = make_scenario(const(1, 24, 10.0), const(1, 24, 1.0))
     f = simulate(c, sc, RuleBasedController(apply_alpha=False)).flows
-    assert f["ch"][0, 0] == pytest.approx(5.0)
-    assert f["exp"][0, 0] == pytest.approx(3.0)
+    assert f["ch"][0, 0] == pytest.approx(8.0)
+    assert f["exp"][0, 0] == pytest.approx(1.0)
     assert f["curtail"][0, 0] == pytest.approx(0.0)
 
 
@@ -156,3 +156,27 @@ def test_any_configuration_is_consistent(seed, n_houses, battery_share, profit_s
     m = compute_metrics(res)["community"]
     assert m["balance_error_kwh"] == pytest.approx(0.0, abs=1e-6)
     assert 0 <= m["scr"] <= 1 + 1e-9
+
+
+def test_inverter_clips_oversized_pv_and_caps_discharge():
+    """12 kWp on a 10 kW inverter: at midday the rules curtail what the inverter cannot pass, later
+    PV + discharge never exceeds the inverter; the strict simulator checks the same limit."""
+    c = CommunityParams(houses=(HouseParams(id=1, pv_kwp=12.0, battery=BatteryParams(), initial_soc_ratio=1.0),
+                                HouseParams(id=2, pv_kwp=0.0)))
+    pv = [[12.0] * 6 + [4.0] * 6 + [0.0] * 12, [0.0] * 24]
+    load = [[1.0] * 24, [8.0] * 24]
+    res = simulate(c, make_scenario(pv, load), RuleBasedController(apply_alpha=False))
+    f = res.flows
+    assert f["curtail"][0, 0] == pytest.approx(2.0)          # full battery: 12 - 10 kW clipped
+    assert f["p2p_out"][0, 0] + f["exp"][0, 0] == pytest.approx(9.0)
+    assert (f["dis"][0, 6:12] <= 6.0 + 1e-9).all()           # 4 kW PV leaves 6 kW of inverter for the battery
+    assert compute_metrics(res)["community"]["balance_error_kwh"] == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.parametrize("start", [date(2025, 1, 10), date(2025, 7, 10)])
+def test_baselines_pass_strict_simulator_on_synthetic_weeks(start):
+    c = default_community()
+    sc = generate_scenario(c, start=start, n_days=3, seed=7)
+    for ctl in baseline_controllers():
+        res = simulate(c, sc, ctl)                   # DispatchError on any battery / inverter / grid violation
+        assert compute_metrics(res)["community"]["balance_error_kwh"] == pytest.approx(0.0, abs=1e-6), ctl.name

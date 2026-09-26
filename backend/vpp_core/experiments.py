@@ -7,6 +7,7 @@ from vpp_core.controllers import RuleBasedController
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import LPController, MPCController
 from vpp_core.params import default_community
+from vpp_core.reporting import LABELS, utf8_console
 from vpp_core.scenario import generate_scenario
 from vpp_core.simulator import simulate
 
@@ -22,7 +23,7 @@ def baseline_controllers() -> list[RuleBasedController]:
 
 
 COLUMNS = [
-    ("controller", "{:<24}"), ("cost_lei", "{:>9.1f}"), ("import_kwh", "{:>9.1f}"),
+    ("controller", "{:<40}"), ("cost_lei", "{:>9.1f}"), ("import_kwh", "{:>9.1f}"),
     ("export_kwh", "{:>9.1f}"), ("p2p_kwh", "{:>8.1f}"), ("curtail_kwh", "{:>9.1f}"),
     ("shed_kwh", "{:>8.1f}"), ("soc_delta_kwh", "{:>7.1f}"), ("peak_import_kw", "{:>7.1f}"),
     ("scr", "{:>6.1%}"), ("ssr", "{:>6.1%}"),
@@ -30,12 +31,13 @@ COLUMNS = [
 
 
 def print_table(rows: list[dict]) -> None:
-    print("  ".join(f"{name:>{len(fmt.format(0)) if name != 'controller' else 24}}" for name, fmt in COLUMNS))
+    print("  ".join(f"{name:>{len(fmt.format(0)) if name != 'controller' else 40}}" for name, fmt in COLUMNS))
     for row in rows:
-        print("  ".join(fmt.format(row[name]) for name, fmt in COLUMNS))
+        print("  ".join(fmt.format(LABELS[row[name]] if name == "controller" else row[name]) for name, fmt in COLUMNS))
 
 
 def main() -> None:
+    utf8_console()
     community = default_community()
     for label, start in (("Vara (iunie)", date(2025, 6, 1)), ("Iarna (ianuarie)", date(2025, 1, 10))):
         scenario = generate_scenario(community, start=start, n_days=7, dt_h=0.25, seed=42)

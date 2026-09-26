@@ -18,6 +18,7 @@ from vpp_core.params import default_community
 from vpp_core.reporting import (
     COLORS,
     INK,
+    LABELS,
     MUTED,
     SEASON_LABELS,
     add_common_arguments,
@@ -25,6 +26,7 @@ from vpp_core.reporting import (
     output_dir,
     plot_style,
     run_parallel,
+    utf8_console,
     weights,
     write_csv,
 )
@@ -101,7 +103,7 @@ def pareto_plot(rows: list[dict], n_days: int, path: Path) -> None:
         low, high = min(costs), max(costs)
         ax.set_ylim(low - 0.25 * (high - low) - 1, high + 0.25 * (high - low) + 1)
     np.atleast_1d(axes)[0].set_ylabel(f"Cost energie [lei / {n_days} zile]")
-    fig.suptitle("MPC cu taxă de vârf: etichetele sunt taxa [lei/kW], medie pe seed-uri",
+    fig.suptitle(f"{LABELS['mpc_varf']}: etichetele sunt taxa [lei/kW], medie pe seed-uri",
                  fontsize=9, color=MUTED, x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(path)
@@ -117,6 +119,7 @@ def print_table(rows: list[dict]) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    utf8_console()
     add_common_arguments(parser, default_seeds=3)
     parser.add_argument("--plot-only", action="store_true", help="doar graficul, din pareto.csv existent")
     args = parser.parse_args(argv)

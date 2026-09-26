@@ -78,6 +78,7 @@ class RuleBasedController(Controller):
         self.has_battery = np.array([house.battery is not None for house in houses])
         self.capacity_kwh = np.array([house.battery.capacity_kwh if house.battery else 0.0 for house in houses])
         self.eta_ch = np.array([house.battery.eta_ch if house.battery else 1.0 for house in houses])
+        self.inverter_kw = np.array([house.inverter_kw for house in houses])
 
     def _shed_flexible_load(self, dispatch: Dispatch, flex: np.ndarray, t: int) -> None:
         if not self.apply_alpha:
@@ -88,13 +89,17 @@ class RuleBasedController(Controller):
 
     def _use_battery(
         self, dispatch: Dispatch, surplus: np.ndarray, deficit: np.ndarray,
-        max_charge: np.ndarray, max_discharge: np.ndarray,
+        max_charge: np.ndarray, max_discharge: np.ndarray, ac_out_room: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        dispatch.dis = np.minimum(deficit, max_discharge)
+        """Returns the surplus that can still leave the house and the deficit still uncovered;
+        surplus the inverter cannot pass on is curtailed."""
+        dispatch.dis = np.minimum(deficit, np.minimum(max_discharge, ac_out_room))
         deficit = deficit - dispatch.dis
         dispatch.ch = np.minimum(surplus, max_charge)
         surplus = surplus - dispatch.ch
-        return surplus, deficit
+        sendable = np.minimum(surplus, ac_out_room - dispatch.dis)
+        dispatch.curtail = dispatch.curtail + (surplus - sendable)
+        return sendable, deficit
 
     def _trade_p2p(
         self, dispatch: Dispatch, surplus: np.ndarray, deficit: np.ndarray
@@ -115,7 +120,7 @@ class RuleBasedController(Controller):
         dispatch.exp = surplus.copy()
         if dispatch.exp.sum() > grid.export_max_kw:
             dispatch.exp *= grid.export_max_kw / dispatch.exp.sum()
-        dispatch.curtail = surplus - dispatch.exp
+        dispatch.curtail = dispatch.curtail + (surplus - dispatch.exp)
 
     def _import_or_shed(self, dispatch: Dispatch, deficit: np.ndarray) -> None:
         grid = self.community.grid
@@ -124,12 +129,15 @@ class RuleBasedController(Controller):
             dispatch.imp *= grid.import_max_kw / dispatch.imp.sum()
             dispatch.shed = dispatch.shed + (deficit - dispatch.imp)
 
-    def _arbitrage(self, dispatch: Dispatch, state: SimState, max_charge: np.ndarray, dt_h: float) -> None:
+    def _arbitrage(self, dispatch: Dispatch, state: SimState, max_charge: np.ndarray, pv: np.ndarray,
+                   dt_h: float) -> None:
         if not (self.arbitrage and self.use_battery and self.zones[state.t] == "cheap"):
             return
         candidates = self.is_profit & self.has_battery & (dispatch.dis <= 0)
         target_kw = (self.arbitrage_target_ratio * self.capacity_kwh - state.soc_kwh) / (self.eta_ch * dt_h)
-        wanted = np.where(candidates, np.clip(np.minimum(max_charge - dispatch.ch, target_kw), 0, None), 0.0)
+        ac_in_room = self.inverter_kw + (pv - dispatch.curtail) + dispatch.dis - dispatch.ch
+        wanted = np.minimum(np.minimum(max_charge - dispatch.ch, target_kw), ac_in_room)
+        wanted = np.where(candidates, np.clip(wanted, 0, None), 0.0)
         headroom = max(self.community.grid.import_max_kw - dispatch.imp.sum(), 0.0)
         if wanted.sum() > headroom:
             wanted *= headroom / wanted.sum()
@@ -146,22 +154,28 @@ class RuleBasedController(Controller):
         self._shed_flexible_load(dispatch, flex, t)
         load = critical + flex - dispatch.shed
 
-        direct = np.minimum(pv, load)
+        # the load sits on the inverter's AC output, so PV feeds it only up to inverter_kw
+        direct = np.minimum(np.minimum(pv, load), self.inverter_kw)
         surplus = pv - direct
         deficit = load - direct
+        ac_out_room = self.inverter_kw - direct   # left for discharge, P2P and export
 
         zeros = np.zeros(n_houses)
         max_charge = state.max_charge_kw(dt_h) if self.use_battery else zeros
         max_discharge = state.max_discharge_kw(dt_h) if self.use_battery else zeros
 
         if self.p2p_before_battery:
+            surplus = np.minimum(surplus, ac_out_room)
             surplus, deficit = self._trade_p2p(dispatch, surplus, deficit)
-            surplus, deficit = self._use_battery(dispatch, surplus, deficit, max_charge, max_discharge)
+            surplus, deficit = self._use_battery(
+                dispatch, pv - direct - dispatch.p2p_out, deficit, max_charge, max_discharge,
+                ac_out_room - dispatch.p2p_out,
+            )
         else:
-            surplus, deficit = self._use_battery(dispatch, surplus, deficit, max_charge, max_discharge)
+            surplus, deficit = self._use_battery(dispatch, surplus, deficit, max_charge, max_discharge, ac_out_room)
             surplus, deficit = self._trade_p2p(dispatch, surplus, deficit)
 
         self._export_or_curtail(dispatch, surplus)
         self._import_or_shed(dispatch, deficit)
-        self._arbitrage(dispatch, state, max_charge, dt_h)
+        self._arbitrage(dispatch, state, max_charge, pv, dt_h)
         return dispatch

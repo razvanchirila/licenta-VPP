@@ -1,3 +1,5 @@
+import math
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -7,7 +9,14 @@ from conftest import const, make_scenario
 from vpp_core.experiments import baseline_controllers
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import LPController, LPWeights, MPCController, noisy_forecast, solve_dispatch
-from vpp_core.params import BatteryParams, CommunityParams, GridParams, HouseParams, default_community
+from vpp_core.params import (
+    BatteryParams,
+    CommunityParams,
+    GridParams,
+    HouseParams,
+    default_community,
+    deye_se_f16,
+)
 from vpp_core.scenario import generate_scenario
 from vpp_core.simulator import simulate
 
@@ -205,9 +214,48 @@ def test_mpc_peak_memory_reset_and_billing_period():
     assert daily.peak_so_far_kw == pytest.approx(res.flows["imp"].sum(axis=0)[sc.steps_per_day:].max())
 
 
-def test_mpc_with_forecast_errors_beats_rules():
+def _total_cost(res, deg_cost: float, worst_price: float) -> float:
+    """Energy bill + battery wear + the stored energy the run ends short of, bought back at the worst price.
+    This is what the LP / MPC objective minimises; cost_lei alone ignores wear and the end SOC."""
+    m = compute_metrics(res)["community"]
+    throughput = float((res.flows["ch"] + res.flows["dis"]).sum() * res.scenario.dt_h)
+    return m["cost_lei"] + deg_cost * throughput + max(0.0, -m["soc_delta_kwh"]) * worst_price
+
+
+def test_mpc_with_forecast_errors_beats_rules_on_the_full_objective():
+    """With the Deye wear cost (0.20 lei/kWh) the raw 3-day energy bill of MPC can be above the rules',
+    because the rules empty the batteries (about 27 kWh short at the end) and cycle them three times as
+    much; at the same end SOC and with wear included MPC is clearly cheaper. Over a 7-day week at 15 min
+    (results/) MPC is also cheaper on the raw bill."""
     c = default_community()
     sc = generate_scenario(c, start=date(2025, 1, 10), n_days=3, dt_h=1.0, seed=4)
-    rules = compute_metrics(simulate(c, sc, baseline_controllers()[2]))["community"]
-    mpc = compute_metrics(simulate(c, sc, MPCController()))["community"]
-    assert mpc["cost_lei"] < rules["cost_lei"]
+    rules = simulate(c, sc, baseline_controllers()[2])
+    mpc = simulate(c, sc, MPCController())
+    deg, worst = LPWeights().deg_cost, sc.price_import.max() / 0.95
+    assert _total_cost(mpc, deg, worst) < _total_cost(rules, deg, worst) - 20
+    assert compute_metrics(mpc)["community"]["soc_delta_kwh"] == pytest.approx(0.0, abs=1e-3)
+
+
+def test_inverter_caps_pv_plus_discharge_export():
+    """9 kW PV, full 2-module battery (10 kW), export paid well: without the inverter the LP
+    would export 19 kW; with it, PV + discharge stays at 10 kW so the battery adds at most 1 kW."""
+    house = HouseParams(id=1, pv_kwp=10, battery=deye_se_f16(2), initial_soc_ratio=1.0)
+    c = CommunityParams(houses=(house,))
+    sc = make_scenario(const(1, 4, 9.0), const(1, 4, 0.0), price_import=[10.0] * 4, price_export=[5.0] * 4)
+    f = simulate(c, sc, LPController(NO_WEAR, terminal_soc=False)).flows
+    assert (f["exp"][0] <= 10.0 + 1e-6).all()
+    assert (f["dis"][0] <= 1.0 + 1e-6).all()
+    assert f["dis"][0, 0] == pytest.approx(1.0, abs=1e-6)             # still worth selling the 1 kW that fits
+    free = CommunityParams(houses=(replace(house, inverter_kw=math.inf),))
+    assert simulate(free, sc, LPController(NO_WEAR, terminal_soc=False)).flows["dis"][0, 0] == pytest.approx(10.0)
+
+
+def test_inverter_caps_grid_charging():
+    """Night, empty 2-module battery, cheap price now: ch - dis - (pv - curtail) <= inverter_kw."""
+    house = HouseParams(id=1, pv_kwp=0, battery=deye_se_f16(2), initial_soc_ratio=0.1, inverter_kw=6.0)
+    c = CommunityParams(houses=(house,))
+    price = np.array([0.1] * 2 + [3.0] * 6)
+    sc = make_scenario(const(1, 8, 0.0), const(1, 8, 2.0), price_import=price, price_export=[0.0] * 8)
+    f = simulate(c, sc, LPController(NO_WEAR, terminal_soc=False)).flows
+    assert f["ch"][0, :2].max() == pytest.approx(6.0, abs=1e-6)       # not the 10 kW of the battery port
+    assert f["imp"][0, :2].max() == pytest.approx(8.0, abs=1e-6)      # 6 kW into the battery + 2 kW of load

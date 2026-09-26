@@ -75,3 +75,15 @@ def test_rejects_p2p_for_non_participant():
     sc = make_scenario([[3.0] * 24, [0.0] * 24], const(2, 24, 1.0))
     with pytest.raises(DispatchError, match="P2P"):
         simulate(community(p2p=False), sc, Fixed(p2p_out=[1.0, 0.0], p2p_in=[0.0, 1.0], exp=[1.0, 0.0]))
+
+
+def test_rejects_net_ac_power_over_the_inverter():
+    """12 kW PV, 1 kW load, no battery: exporting the whole 11 kW surplus means 12 kW through a 10 kW inverter."""
+    sc = make_scenario(const(1, 24, 12.0), const(1, 24, 1.0))
+    with pytest.raises(DispatchError, match="inverter"):
+        simulate(community(n=1), sc, Fixed(exp=[11.0]))
+    res = simulate(community(n=1), sc, Fixed(exp=[9.0], curtail=[2.0]))   # 10 kW AC, 2 kW clipped
+    assert res.flows["curtail"].sum() == pytest.approx(48.0)
+    small = CommunityParams(houses=(HouseParams(id=0, battery=BatteryParams(), inverter_kw=6.0),))
+    with pytest.raises(DispatchError, match="inverter"):                   # 8 kW from the grid through 6 kW
+        simulate(small, sc, Fixed(ch=[8.0], imp=[8.0], curtail=[12.0], shed=[1.0]))

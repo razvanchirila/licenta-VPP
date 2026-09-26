@@ -76,6 +76,15 @@ def _check_house_rules(dispatch: Dispatch, community: CommunityParams, t: int) -
             raise DispatchError(f"t={t}: house {house.id} does not take part in P2P")
 
 
+def _check_inverter_limits(dispatch: Dispatch, community: CommunityParams, pv: np.ndarray, t: int) -> None:
+    net_ac = (pv - dispatch.curtail) + dispatch.dis - dispatch.ch
+    for i, house in enumerate(community.houses):
+        if abs(net_ac[i]) > house.inverter_kw + TOL:
+            raise DispatchError(
+                f"t={t}: house {house.id}: net AC power {net_ac[i]:.4f} kW exceeds the {house.inverter_kw} kW inverter"
+            )
+
+
 def _check_community_limits(dispatch: Dispatch, community: CommunityParams, t: int) -> None:
     grid = community.grid
     if abs(dispatch.p2p_in.sum() - dispatch.p2p_out.sum()) > TOL * community.n_houses:
@@ -94,6 +103,7 @@ def validate(dispatch: Dispatch, community: CommunityParams, scenario: Scenario,
     _check_shapes_and_signs(dispatch, community.n_houses, t)
     _check_node_balance(dispatch, pv, load, t)
     _check_house_rules(dispatch, community, t)
+    _check_inverter_limits(dispatch, community, pv, t)
     _check_community_limits(dispatch, community, t)
 
 
