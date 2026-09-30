@@ -13,7 +13,19 @@ scripts/     scripturi de pornire pentru Windows
 
 Nucleul de simulare e în `backend/vpp_core` și poate fi rulat separat, fără bază de date.
 
-## Instalare
+## Pornire rapidă
+
+Dublu-click pe `start.bat`. La prima rulare instalează ce lipsește (mediul Python, pachetele și, dacă vrei, Flutter), compilează aplicația web, creează conturile demo și pornește totul. Apoi se deschid în browser:
+
+| Ce | Adresă | Cont |
+|---|---|---|
+| Dashboard operator | http://127.0.0.1:8000 | `admin` / `123` |
+| Aplicația Flutter | http://127.0.0.1:3000 | `user1` / `123` (până la `user10`) |
+| Documentație API | http://127.0.0.1:8000/docs | |
+
+Se oprește cu Ctrl+C în fereastra deschisă. La fiecare pornire baza de date e creată din nou; `start.bat --keep-db` o păstrează, iar `start.bat --no-mobile` pornește doar backend-ul și dashboard-ul.
+
+## Instalare manuală
 
 Ai nevoie de Python 3.11 și Flutter. Baza de date e SQLite (un fișier în `backend/`), nu trebuie instalat nimic.
 
@@ -44,4 +56,4 @@ Al doilea script compară strategiile de control pe o săptămână de vară și
 
 ## Evaluare
 
-`scripts\run_evaluation.bat` rulează toate strategiile (reguli, baterie locală, MPC, optim LP) pe patru anotimpuri și mai multe seed-uri și scrie tabelele și graficele în `results/`. Cu `--real` folosește prețuri PZU, producție PV și profiluri de consum reale din 2023 (`backend/data/`, sursele sunt descrise acolo).
+`scripts\run_evaluation.bat` rulează toate strategiile (reguli, baterie locală, MPC, optim LP) pe patru anotimpuri și mai multe seed-uri și scrie tabelele și graficele în `results/`. Cu `--real` folosește producția PV reală din 2023 și prețurile PZU din 2023, 2025 sau 2026 (`--price-year`), iar consumul fiecărei case vine din `backend/data/dispozitive.csv`. Sursele sunt descrise în `backend/data/README.md`. `scripts\run_results.bat` regenerează toate rezultatele cu o singură comandă.

@@ -40,3 +40,5 @@ mobile/windows/flutter/generated_plugins.cmake
 
 # rezultate de evaluare (se adauga in repo cand sunt finale)
 results/
+
+logs/

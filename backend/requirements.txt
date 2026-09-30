@@ -15,6 +15,7 @@ bcrypt==5.0.0
 numpy==2.4.6
 highspy==1.15.1
 matplotlib==3.10.6
+tzdata==2026.3               # fusul orar Europe/Bucharest pe Windows
 
 # Doar pentru regenerarea datelor reale (python -m vpp_core.data_sources --fetch)
 openpyxl==3.1.5
