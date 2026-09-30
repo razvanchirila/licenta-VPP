@@ -1,6 +1,6 @@
 """
-The live loop's load comes from the devices seeded from dispozitive.csv, and its PV / prices from the
-2023 data (SIM_DATA=real). Same temporary-database setup as test_api.py; steps are triggered by hand.
+The live loop's load comes from the devices seeded from dispozitive.csv, its PV from the 2023 data and its
+prices from SIM_PRICE_YEAR (SIM_DATA=real). Same temporary-database setup as test_api.py; steps are triggered by hand.
 """
 import asyncio
 import logging
@@ -164,13 +164,15 @@ def test_data_day_mapping():
     assert data_day(date(2026, 1, 1), 2023) == date(2023, 1, 1)
 
 
-def test_real_mode_prices_are_the_2023_pzu_with_the_tariff(client, admin):
+def test_real_mode_prices_are_the_pzu_of_the_price_year_with_the_tariff(client, admin):
+    year = sim.data_year
+    assert year in ds.PRICE_YEARS
     status = client.get("/api/sim/status", headers=admin).json()
-    assert status["data_source"] == "real" and status["data_year"] == 2023
+    assert status["data_source"] == "real" and status["data_year"] == year
     config = client.get("/api/config", headers=admin).json()
-    assert config["data_source"] == "real" and config["data_year"] == 2023
+    assert config["data_source"] == "real" and config["data_year"] == year
 
-    pzu = ds.load_prices_lei_kwh()[date(2023, 6, 1).timetuple().tm_yday - 1]          # 2025-06-01 -> 2023-06-01
+    pzu = ds.load_prices_lei_kwh(year)[date(2023, 6, 1).timetuple().tm_yday - 1]      # 1 June of the price year
     prices = client.get("/api/sim/prices", headers=admin).json()["prices"]
     for t in (0, 13, 50, 95):
         expected = (pzu[int(t * DT_H)] + SUPPLY_MARGIN + NETWORK_ADDER) * (1 + VAT)
@@ -185,15 +187,15 @@ def test_real_mode_prices_are_the_2023_pzu_with_the_tariff(client, admin):
 
 
 def test_synthetic_fallback_when_the_csvs_are_missing(client, admin, monkeypatch, caplog, tmp_path):
-    pzu0 = ds.load_prices_lei_kwh()[date(2023, 6, 1).timetuple().tm_yday - 1][0]
-    monkeypatch.setattr(ds, "PRICES_CSV", tmp_path / "prices_ro_2023.csv")
+    pzu0 = ds.load_prices_lei_kwh(sim.data_year)[date(2023, 6, 1).timetuple().tm_yday - 1][0]
+    monkeypatch.setattr(ds, "DATA_DIR", tmp_path)
     sim.scenario = None
     with caplog.at_level(logging.WARNING, logger=simulation_loop.__name__):
         sim.day, sim.t = DAY, 0
         step = client.post("/api/sim/step", headers=admin).json()
     assert step["data_source"] == "sintetic"
     assert client.get("/api/sim/status", headers=admin).json()["data_source"] == "sintetic"
-    assert any("Date reale indisponibile" in rec.message and "prices_ro_2023.csv" in rec.message
+    assert any("Date reale indisponibile" in rec.message and f"prices_ro_{sim.data_year}.csv" in rec.message
                for rec in caplog.records)
     assert step["price"]["import"] != pytest.approx((pzu0 + SUPPLY_MARGIN + NETWORK_ADDER) * (1 + VAT), abs=1e-4)
 

@@ -60,7 +60,7 @@ class Settings:
     sim_start_date: date = field(default_factory=lambda: _env_date("SIM_START_DATE"))
     sim_autostart: bool = field(default_factory=lambda: _env_bool("SIM_AUTOSTART", True))
     sim_data: str = field(default_factory=lambda: os.getenv("SIM_DATA", "real").strip().lower())
-    sim_price_year: int = field(default_factory=lambda: int(os.getenv("SIM_PRICE_YEAR", "2023")))
+    sim_price_year: int = field(default_factory=lambda: int(os.getenv("SIM_PRICE_YEAR", "2025")))
     initial_wallet_lei: float = field(default_factory=lambda: _env_float("INITIAL_WALLET_LEI", 100.0))
     operator_wallet_lei: float = field(default_factory=lambda: _env_float("OPERATOR_WALLET_LEI", 10000.0))
 

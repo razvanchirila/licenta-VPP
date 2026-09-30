@@ -1,6 +1,6 @@
-# Date reale 2023
+# Date reale
 
-Fișierele CSV de aici sunt intrările „reale” ale simulatorului (`vpp_core/scenario_real.py`), alternative la generatorul sintetic din `vpp_core/scenario.py`. Toate acoperă anul 2023, singurul an pentru care există simultan prețuri PZU orare și seria PV din satelit (PVGIS SARAH3 se oprește la 2023). Sunt mici (sub 1 MB în total) și se comit în git, ca testele și evaluarea să meargă fără internet. Fișierele brute descărcate stau în `raw/`, care este ignorat de git.
+Fișierele CSV de aici sunt intrările „reale” ale simulatorului (`vpp_core/scenario_real.py`), alternative la generatorul sintetic din `vpp_core/scenario.py`. Producția PV și calendarul (sărbători, zile lucrătoare) sunt din 2023, ultimul an acoperit de seria PV din satelit (PVGIS SARAH3 se oprește la 2023). Prețurile PZU există pentru trei ani, 2023, 2025 și 2026, și se aleg cu `price_year` în `generate_scenario_real` (implicit 2025) sau cu `--price-year` la modulele de evaluare; ora `h` din ziua `z` a anului de preț se pune peste aceeași lună, zi și oră din 2023. Așa se poate compara aceeași comunitate, cu aceeași vreme, pe prețurile unor ani diferiți. Fișierele sunt mici (sub 1 MB în total) și se comit în git, ca testele și evaluarea să meargă fără internet. Fișierele brute descărcate stau în `raw/`, care este ignorat de git.
 
 Regenerare (are nevoie de internet și de `openpyxl`, din `requirements.txt`):
 
@@ -11,15 +11,26 @@ cd backend
 
 Descărcările sunt păstrate în `raw/`; pentru a lua din nou fișierele de la sursă se șterge folderul. Dacă rețeaua nu răspunde, scriptul se oprește cu un mesaj clar, nu lasă CSV-uri pe jumătate scrise.
 
-Toate seriile orare sunt pe ora locală (Europe/București, cu ora de vară), reindexate pe o grilă regulată de 365 × 24: ora care lipsește pe 26 martie e completată prin interpolare între vecine, ora dublă din 29 octombrie e mediată. Astfel fiecare zi are exact 24 de ore și vârfurile de seară (preț, consum) rămân la aceeași oră de ceas tot anul.
+Toate seriile orare sunt pe ora locală (Europe/București, cu ora de vară), reindexate pe o grilă regulată de 365 × 24: ora care lipsește la trecerea la ora de vară (ultima duminică din martie) e completată prin interpolare între vecine, ora dublă din ultima duminică din octombrie e mediată. Astfel fiecare zi are exact 24 de ore și vârfurile de seară (preț, consum) rămân la aceeași oră de ceas tot anul.
 
-## prices_ro_2023.csv
+## prices_ro_2023.csv, prices_ro_2025.csv, prices_ro_2026.csv
 
-Prețuri day-ahead (PZU) orare pentru România, din setul „European Wholesale Electricity Price Data” publicat de Ember (agregat din ENTSO-E). Coloane: `datetime_local`, `price_eur_mwh` (valoarea originală), `price_lei_kwh` (convertită cu cursul mediu anual BNR 2023, 4,9465 lei/EUR). Media anuală este 0,513 lei/kWh (≈ 104 EUR/MWh); există 32 de ore cu preț negativ, păstrate ca atare.
+Prețuri day-ahead (PZU) orare pentru România, din setul „European Wholesale Electricity Price Data” publicat de Ember (agregat din ENTSO-E). Coloane: `datetime_local`, `price_eur_mwh` (valoarea originală), `price_lei_kwh` (convertită cu cursul mediu anual BNR al anului respectiv). Cursul este media cursurilor medii lunare publicate de BNR și e constanta `EUR_RON` din `vpp_core/data_sources.py`:
+
+| An | lei/EUR | Ore | PZU mediu | Minim / maxim | Ore cu preț negativ |
+|---|---|---|---|---|---|
+| 2023 | 4,9465 | 8760 (tot anul) | 0,513 lei/kWh (104 EUR/MWh) | −0,12 / 2,16 lei/kWh | 32 |
+| 2025 | 5,0415 | 8760 (tot anul) | 0,545 lei/kWh (108 EUR/MWh) | −0,51 / 3,04 lei/kWh | 196 |
+| 2026 | 5,1677 (ianuarie–august) | 6048 (1 ianuarie – 9 septembrie) | 0,628 lei/kWh (121 EUR/MWh) | −0,50 / 4,93 lei/kWh | 168 |
+
+2025 e ultimul an complet și anul implicit. Fișierul 2026 se oprește la ultima zi publicată la data descărcării; zilele de după au `NaN` în `load_prices_lei_kwh(2026)`, iar un scenariu care ar cădea pe ele (de exemplu săptămâna de toamnă din 10 octombrie) se oprește cu un mesaj care spune până când există prețuri. De aceea în `results/real/2026/` lipsește toamna. Cursul pentru 2026 e media lunilor ianuarie–august, singurele publicate complet.
+
+Orele cu preț negativ sunt păstrate ca atare. Cu formulele de mai jos importul rămâne pozitiv la orice preț peste −0,7575 lei/kWh (minimul din date e −0,51), iar exportul devine negativ, adică prosumatorul plătește ca să livreze, doar sub −0,223 lei/kWh: 10 ore în 2025 și 14 în 2026, niciuna în săptămânile simulate. Optimizarea (LP, MPC) ar limita atunci PV-ul în loc să exporte; strategiile pe reguli ar exporta și ar plăti.
 
 - Sursă: https://ember-energy.org/data/european-wholesale-electricity-price-data/ (arhiva orară, fișierul `Romania.csv`)
-- Licență: CC-BY-4.0
-- Descărcat: 11.09.2026
+- Curs: Banca Națională a României, cursurile medii lunare EUR/RON
+- Licență: CC-BY-4.0 (Ember)
+- Descărcat: 11.09.2026 (aceeași arhivă pentru toți anii; de aici și sfârșitul seriei 2026 pe 9 septembrie)
 
 ## pv_bacau_2023.csv
 
@@ -63,7 +74,7 @@ Cele patru moduri:
 
 Regula de energie este aceeași pentru toate: un aparat de `P` W care merge `h` ore pe zi consumă în medie `P × h` Wh pe zi, deci consumul anual al unei case se poate verifica cu un calcul de mână din tabel (coloana `kwh_an_calculat` din raport) și iese la fel cu ce produce simularea. Numerele aleatoare pornesc dintr-un seed pe casă (seed-ul scenariului și numărul casei), așa că o casă are același profil indiferent câte alte case sunt simulate, iar două rulări cu același seed dau exact același consum. Blocurile care trec peste miezul nopții (interval `22-6`) sunt generate și pentru ziua dinaintea ferestrei simulate, ca prima noapte să nu fie goală.
 
-Profilul intră în amândouă generatoarele de scenarii: `generate_scenario(..., load_source="dispozitive" | "sintetic")` și `generate_scenario_real(..., load_source="dispozitive" | "deer")`, cu `dispozitive` implicit. Producția PV și prețurile nu depind de sursa de consum (la același seed sunt identice), deci cele două surse se pot compara direct. Dacă o casă din comunitate nu are rânduri în fișier (de exemplu comunitățile de 50–200 de case din studiul de scalare), pentru ea se folosește sursa veche și se afișează un singur avertisment.
+Profilul intră în amândouă generatoarele de scenarii: `generate_scenario(..., load_source="dispozitive" | "sintetic")` și `generate_scenario_real(..., load_source="dispozitive" | "deer")`, cu `dispozitive` implicit. Producția PV și prețurile nu depind de sursa de consum (la același seed sunt identice), deci cele două surse se pot compara direct. Cele 10 case din fișier servesc și ca șabloane: `HouseParams.profile_id` spune ale cărei case aparate le are o casă (implicit propriul număr). `params.random_community`, folosit în studiul de scalare cu 10–200 de case, trage pentru fiecare casă un șablon la întâmplare dintre cele 10; numerele aleatoare vin în continuare din numărul casei simulate, deci două case cu același șablon au aceleași aparate, dar nu pornesc la aceleași ore. Doar dacă o casă nu are nici șablon, nici rânduri în fișier se folosește sursa veche, cu un singur avertisment.
 
 Raportul de verificare se obține cu:
 
@@ -91,7 +102,7 @@ Media pe casă este 3981 kWh pe an, iar iarna 11,5 kWh pe zi, foarte aproape de 
 
 ## Tarif și prosumatori
 
-Componentele tarifului final sunt constante în `scenario_real.py` și sunt valorile din 2025–2026, aplicate peste PZU 2023. Prețurile din simulare sunt deci „anul de piață 2023 cu structura de tarif de azi”, nu factura efectivă din 2023, care era plafonată.
+Componentele tarifului final sunt constante în `scenario_real.py` și sunt valorile din 2026, aplicate la fel peste PZU din oricare an (2023, 2025 sau 2026). Prețurile din simulare sunt deci „anul de piață X cu structura de tarif de azi”, nu factura efectivă din acel an: în 2023 și în prima jumătate a lui 2025 prețul casnic era plafonat, iar tarifele de rețea s-au schimbat de mai multe ori între timp. Diferențele dintre ani din `results/real/` vin astfel numai din PZU și din cursul de schimb.
 
 Valori pentru zona Delgaz Grid (Bacău), lei/kWh fără TVA, din oferta Electrica Furnizare pentru prosumatori (martie 2026):
 

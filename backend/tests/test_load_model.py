@@ -180,6 +180,40 @@ def test_missing_house_uses_fallback_with_a_warning():
         lm.community_load(community, lm.DISPOZITIVE_CSV, date(2023, 1, 10), 2, 1.0, 0)
 
 
+def test_profile_id_picks_the_appliances_and_the_house_id_the_random_stream():
+    start, args = date(2023, 1, 10), (date(2023, 1, 10), 14, 0.25)
+    own = CommunityParams(houses=(HouseParams(id=2), HouseParams(id=4)))
+    same = CommunityParams(houses=(HouseParams(id=2, profile_id=2), HouseParams(id=4, profile_id=4)))
+    crit_own, flex_own = lm.community_load(own, lm.DISPOZITIVE_CSV, *args, seed=0)
+    crit_same, flex_same = lm.community_load(same, lm.DISPOZITIVE_CSV, *args, seed=0)
+    np.testing.assert_array_equal(crit_own, crit_same)                # profile_id = id is today's behaviour
+    np.testing.assert_array_equal(flex_own, flex_same)
+
+    copies = CommunityParams(houses=(HouseParams(id=57, profile_id=2), HouseParams(id=58, profile_id=2),
+                                     HouseParams(id=2)))
+    crit, flex = lm.community_load(copies, lm.DISPOZITIVE_CSV, *args, seed=0)     # ids 57, 58 are not in the CSV
+    total = crit + flex
+    assert not np.array_equal(total[0], total[1]) and not np.array_equal(total[0], total[2])
+    daily = total.sum(axis=1) * 0.25 / 14
+    assert daily[0] == pytest.approx(daily[2], rel=0.1) and daily[1] == pytest.approx(daily[2], rel=0.1)
+    always_on = sum(app.kw for app in lm.by_house(lm.load_appliances())[2] if app.mod == "continuu")
+    assert (total.min(axis=1) >= always_on - 1e-9).all()
+    rng = lm.house_rng(0, 57)
+    expected = lm.house_load_profile(lm.by_house(lm.load_appliances())[2], start, 14, 0.25, rng)
+    np.testing.assert_array_equal(crit[0], expected[0])
+    np.testing.assert_array_equal(flex[0], expected[1])
+
+
+def test_unknown_profile_id_falls_back_like_a_missing_house():
+    community = CommunityParams(houses=(HouseParams(id=1, profile_id=99), HouseParams(id=2)))
+    with pytest.raises(ValueError, match=r"\[1\]"):
+        lm.community_load(community, lm.DISPOZITIVE_CSV, date(2023, 1, 10), 1, 1.0, 0)
+    fallback = (np.full((2, 24), 0.3), np.full((2, 24), 0.2))
+    with pytest.warns(UserWarning, match="1 case lipsesc"):
+        crit, _ = lm.community_load(community, lm.DISPOZITIVE_CSV, date(2023, 1, 10), 1, 1.0, 0, fallback)
+    assert np.allclose(crit[0], 0.3) and not np.allclose(crit[1], 0.3)
+
+
 # ----------------------------------------------------------------------------- scenarios
 
 def test_synthetic_scenario_load_sources():

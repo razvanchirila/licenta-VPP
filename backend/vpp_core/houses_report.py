@@ -1,18 +1,20 @@
 """
 Per-house, per-month view of the evaluation: 4 seasons x N seeds x 5 strategies, one row per house.
 
-Run from backend/:   python -m vpp_core.houses_report [--seeds 5] [--days 7] [--dt 0.25] [--real]
-Output: results/case.csv and results/case_luna.png (results/real/... with --real).
+Run from backend/:   python -m vpp_core.houses_report [--seeds 5] [--days 7] [--dt 0.25]
+                                                       [--real [--price-year 2023|2025|2026]]
+Output: results/case.csv and results/case_luna.png (results/real/<price year>/... with --real).
 Monthly cost = cost of the simulated period x MONTH_DAYS / days (a 30-day month, linear extrapolation).
 """
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
+from vpp_core import data_sources as ds
 from vpp_core.evaluation import make_controller
 from vpp_core.metrics import compute_metrics
 from vpp_core.params import CommunityParams, HouseParams, default_community
@@ -22,16 +24,17 @@ from vpp_core.reporting import (
     LABELS,
     MUTED,
     SEASON_LABELS,
-    SEASON_STARTS_REAL,
     SEASONS,
     SHORT_LABELS,
     add_common_arguments,
+    data_label,
     make_scenario,
     output_dir,
     plot_style,
     read_csv,
     run_parallel,
     season_index,
+    seasons_to_run,
     utf8_console,
     write_csv,
 )
@@ -59,6 +62,7 @@ class Settings:
     controllers: tuple[str, ...] = CONTROLLERS
     seasons: tuple[str, ...] = tuple(key for key, _, _ in SEASONS)
     community: CommunityParams | None = None
+    price_year: int = ds.DEFAULT_PRICE_YEAR
 
 
 def modules_of(house: HouseParams) -> int:
@@ -99,7 +103,7 @@ def house_rows(metrics: dict, community: CommunityParams, days: float) -> list[d
 def run_one(task: tuple[str, int, str, Settings]) -> list[dict]:
     season, seed, controller_name, s = task
     community = default_community() if s.community is None else s.community
-    scenario = make_scenario(season, seed, s.n_days, s.dt_h, s.real, community)
+    scenario = make_scenario(season, seed, s.n_days, s.dt_h, s.real, community, s.price_year)
     result = simulate(community, scenario, make_controller(controller_name, seed, s.deg_cost))
     metrics = compute_metrics(result)
     rows = house_rows(metrics, community, scenario.n_steps / scenario.steps_per_day)
@@ -169,8 +173,8 @@ def monthly_chart(summary: list[dict], s: Settings, path: Path) -> None:
         ax.axhline(0, color=MUTED, linewidth=0.8)
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.0))
-    source = f"date reale {SEASON_STARTS_REAL['iarna'].year}" if s.real else "scenarii sintetice"
-    fig.suptitle(f"Factura lunară pe casă ({source}): cost pe {s.n_days} zile x {MONTH_DAYS}/{s.n_days}, "
+    fig.suptitle(f"Factura lunară pe casă ({data_label(s.real, s.price_year)}): "
+                 f"cost pe {s.n_days} zile x {MONTH_DAYS}/{s.n_days}, "
                  f"medie pe {s.n_seeds} seed-uri; negativ = venit", fontsize=9, x=0.01, ha="left")
     fig.tight_layout(rect=(0, 0.08, 1, 1))
     fig.savefig(path)
@@ -205,15 +209,18 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     out = output_dir(args)
     s = Settings(n_seeds=args.seeds, n_days=args.days, dt_h=args.dt, real=args.real,
-                 workers=args.workers, deg_cost=args.deg)
+                 workers=args.workers, deg_cost=args.deg, price_year=args.price_year)
     if args.plot_only:
         summary = read_case_csv(out / "case.csv")
     else:
+        s = replace(s, seasons=seasons_to_run(args))
         summary = aggregate(run_all(s))
         write_csv(summary, KEYS, out / "case.csv")
+    s = replace(s, seasons=tuple(key for key, _, _ in SEASONS if any(r["season"] == key for r in summary)))
     monthly_chart(summary, s, out / "case_luna.png")
     for season in CHART_SEASONS:
-        print_monthly(summary, season)
+        if season in s.seasons:
+            print_monthly(summary, season)
     print(f"\nRezultate scrise in {out}")
 
 

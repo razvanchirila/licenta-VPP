@@ -1,9 +1,10 @@
 """
 Sensitivity studies: forecast error (MPC), battery wear cost, P2P on/off, community size.
 
-Run from backend/:   python -m vpp_core.sensitivity [--seeds 3] [--days 7] [--dt 0.25] [--real]
+Run from backend/:   python -m vpp_core.sensitivity [--seeds 3] [--days 7] [--dt 0.25]
+                                                     [--real [--price-year 2023|2025|2026]]
                                                      [--study all|forecast|deg|p2p|scale]
-Output in results/sensitivity/ (results/real/sensitivity/ with --real): one CSV and one PNG per study.
+Output in results/sensitivity/ (results/real/<price year>/sensitivity/ with --real): one CSV and one PNG per study.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from vpp_core import data_sources as ds
 from vpp_core.controllers import Controller, RuleBasedController
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import LPController, MPCController
@@ -34,6 +36,7 @@ from vpp_core.reporting import (
     plot_style,
     run_parallel,
     season_index,
+    seasons_to_run,
     utf8_console,
     weights,
     write_csv,
@@ -60,6 +63,8 @@ class Settings:
     workers: int | None = None
     deg_cost: float | None = None          # LP/MPC wear cost for the studies that do not vary it
     scale_sizes: tuple[int, ...] = SCALE_SIZES
+    price_year: int = ds.DEFAULT_PRICE_YEAR
+    seasons: tuple[str, ...] = tuple(key for key, _, _ in SEASONS)   # the P2P study runs on all of them
 
 
 def make_controller(name: str, seed: int, deg_cost: float | None = None,
@@ -79,7 +84,7 @@ def without_p2p(community: CommunityParams) -> CommunityParams:
 
 def run_and_measure(community: CommunityParams, season: str, seed: int, controller: Controller, s: Settings) -> dict:
     """Community metrics plus battery throughput (kWh charged), equivalent full cycles per day and wall time."""
-    scenario = make_scenario(season, seed, s.n_days, s.dt_h, s.real, community)
+    scenario = make_scenario(season, seed, s.n_days, s.dt_h, s.real, community, s.price_year)
     t0 = time.perf_counter()
     result = simulate(community, scenario, controller)
     wall_s = time.perf_counter() - t0
@@ -221,7 +226,7 @@ def deg_chart(rows: list[dict], s: Settings, path: Path) -> None:
 
 def p2p_tasks(s: Settings) -> list[dict]:
     return [{"settings": s, "season": season, "seed": seed, "controller": name, "p2p": p2p}
-            for season, _, _ in SEASONS for seed in range(s.n_seeds) for name in CONTROLLERS for p2p in (1, 0)]
+            for season in s.seasons for seed in range(s.n_seeds) for name in CONTROLLERS for p2p in (1, 0)]
 
 
 def p2p_run_one(task: dict) -> dict:
@@ -235,7 +240,7 @@ def p2p_chart(rows: list[dict], s: Settings, path: Path) -> None:
     from matplotlib.patches import Patch
     plt = plot_style()
     fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-    seasons = [key for key, _, _ in SEASONS]
+    seasons = [key for key, _, _ in SEASONS if _select(rows, season=key)]
     x, width = np.arange(len(seasons)), 0.8 / (2 * len(CONTROLLERS))
     for ax, (metric, label, scale) in zip(
         axes, (("cost_lei", f"Cost [lei / {s.n_days} zile]", 1.0), ("ssr", "Autarhie (SSR) [%]", 100.0)), strict=True
@@ -302,8 +307,9 @@ def scale_chart(rows: list[dict], s: Settings, path: Path) -> None:
     left.set_title(f"(a) Cost pe casă [lei / {s.n_days} zile], iarnă, seed 0", fontsize=10, color=INK, loc="left")
     right.set_title(f"(b) Timp de rulare [s], {s.n_days} zile, pas {60 * s.dt_h:.0f} min", fontsize=10, color=INK,
                     loc="left")
-    fig.suptitle("Comunități aleatoare: PV 5-12 kWp, 0 / 1 / 2 module SE-F16 (20 / 50 / 30 % din case), "
-                 "limite de rețea ~ n\npunctele mici: seed 1-2", fontsize=9, color=MUTED, x=0.01, ha="left")
+    fig.suptitle("Comunități aleatoare: PV 5-12 kWp, 0 / 1 / 2 module SE-F16 (20 / 50 / 30 % din case),\n"
+                 "consum după una din casele din dispozitive.csv, limite de rețea ~ n; punctele mici: seed 1-2",
+                 fontsize=9, color=MUTED, x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -387,7 +393,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     out = output_dir(args) / "sensitivity"
     out.mkdir(exist_ok=True)
-    settings = Settings(args.seeds, args.days, args.dt, args.real, args.workers, args.deg)
+    seasons = tuple(key for key, _, _ in SEASONS) if args.plot_only else seasons_to_run(args)
+    settings = Settings(args.seeds, args.days, args.dt, args.real, args.workers, args.deg,
+                        price_year=args.price_year, seasons=seasons)
     for name in STUDIES if args.study == "all" else (args.study,):
         if args.plot_only:
             rows = read_rows(out / f"{name}.csv")

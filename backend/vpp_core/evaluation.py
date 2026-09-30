@@ -1,7 +1,8 @@
 """
 Full evaluation: 4 seasons x N seeds x 6 strategies; tables and charts in results/.
 
-Run from backend/:   python -m vpp_core.evaluation [--seeds 5] [--days 7] [--dt 0.25] [--real] [--deg 0.45]
+Run from backend/:   python -m vpp_core.evaluation [--seeds 5] [--days 7] [--dt 0.25] [--deg 0.45]
+                                                    [--real [--price-year 2023|2025|2026]]
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from vpp_core import data_sources as ds
 from vpp_core.controllers import Controller, RuleBasedController
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import LPController, MPCController
@@ -29,6 +31,7 @@ from vpp_core.reporting import (
     read_csv,
     run_parallel,
     season_index,
+    seasons_to_run,
     utf8_console,
     weights,
     write_csv,
@@ -66,10 +69,10 @@ def make_controller(name: str, seed: int, deg_cost: float | None = None) -> Cont
     raise ValueError(f"unknown controller {name!r}")
 
 
-def run_one(task: tuple[str, int, str, int, float, bool, float | None]) -> dict:
-    season, seed, controller_name, n_days, dt_h, real, deg_cost = task
+def run_one(task: tuple[str, int, str, int, float, bool, float | None, int]) -> dict:
+    season, seed, controller_name, n_days, dt_h, real, deg_cost, price_year = task
     community = default_community()
-    scenario = make_scenario(season, seed, n_days, dt_h, real)
+    scenario = make_scenario(season, seed, n_days, dt_h, real, price_year=price_year)
     t0 = time.perf_counter()
     result = simulate(community, scenario, make_controller(controller_name, seed, deg_cost))
     metrics = compute_metrics(result)["community"]
@@ -90,20 +93,24 @@ def _describe(result: dict) -> str:
 
 
 def run_all(n_seeds: int, n_days: int, dt_h: float, workers: int | None,
-            real: bool = False, deg_cost: float | None = None) -> list[dict]:
+            real: bool = False, deg_cost: float | None = None, price_year: int = ds.DEFAULT_PRICE_YEAR,
+            seasons: tuple[str, ...] | None = None) -> list[dict]:
+    seasons = tuple(key for key, _, _ in SEASONS) if seasons is None else seasons
     tasks = [
-        (season, seed, controller, n_days, dt_h, real, deg_cost)
+        (season, seed, controller, n_days, dt_h, real, deg_cost, price_year)
         for controller in ("mpc", "mpc_varf", "optim_lp", "vpp_reguli", "baterie_locala", "fara_baterie")
-        for season, _, _ in SEASONS
+        for season in seasons
         for seed in range(n_seeds)
     ]
     if TS_SEED >= n_seeds:   # extra runs for the time-series plot only
-        tasks += timeseries_tasks(n_days, dt_h, real, deg_cost)
+        tasks += timeseries_tasks(n_days, dt_h, real, deg_cost, price_year)
     return run_parallel(run_one, tasks, _describe, workers)
 
 
-def timeseries_tasks(n_days: int, dt_h: float, real: bool, deg_cost: float | None) -> list[tuple]:
-    return [(TS_SEASON, TS_SEED, controller, n_days, dt_h, real, deg_cost) for controller in TS_CONTROLLERS]
+def timeseries_tasks(n_days: int, dt_h: float, real: bool, deg_cost: float | None,
+                     price_year: int = ds.DEFAULT_PRICE_YEAR) -> list[tuple]:
+    return [(TS_SEASON, TS_SEED, controller, n_days, dt_h, real, deg_cost, price_year)
+            for controller in TS_CONTROLLERS]
 
 
 def write_metrics_csv(rows: list[dict], path: Path) -> None:
@@ -164,13 +171,14 @@ def grouped_bar(summary: dict, metric: str, ylabel: str, path: Path, scale: floa
     plt = plot_style()
     fig, ax = plt.subplots(figsize=(8, 4.3))
     n_bars, width = len(CONTROLLERS), 0.8 / len(CONTROLLERS)
-    x = np.arange(len(SEASONS))
+    seasons = [(key, label) for key, label, _ in SEASONS if (key, CONTROLLERS[0]) in summary]
+    x = np.arange(len(seasons))
     for j, controller in enumerate(CONTROLLERS):
-        means = [summary[(season, controller)][f"{metric}_mean"] * scale for season, _, _ in SEASONS]
-        stds = [summary[(season, controller)][f"{metric}_std"] * scale for season, _, _ in SEASONS]
+        means = [summary[(season, controller)][f"{metric}_mean"] * scale for season, _ in seasons]
+        stds = [summary[(season, controller)][f"{metric}_std"] * scale for season, _ in seasons]
         ax.bar(x + (j - (n_bars - 1) / 2) * width, means, width * 0.92, yerr=stds, color=COLORS[controller],
                label=LABELS[controller], error_kw={"ecolor": MUTED, "elinewidth": 0.8, "capsize": 2})
-    ax.set_xticks(x, [label for _, label, _ in SEASONS])
+    ax.set_xticks(x, [label for _, label in seasons])
     ax.set_ylabel(ylabel)
     ax.grid(axis="x", visible=False)
     ax.axhline(0, color=MUTED, linewidth=0.8)
@@ -180,7 +188,8 @@ def grouped_bar(summary: dict, metric: str, ylabel: str, path: Path, scale: floa
     plt.close(fig)
 
 
-def timeseries_plot(results: list[dict], dt_h: float, path: Path, real: bool = False) -> None:
+def timeseries_plot(results: list[dict], dt_h: float, path: Path, real: bool = False,
+                    price_year: int = ds.DEFAULT_PRICE_YEAR) -> None:
     plt = plot_style()
     series_of = {r["metrics"]["controller"]: r["series"] for r in results
                  if r["metrics"]["season"] == TS_SEASON and r["metrics"]["seed"] == TS_SEED}
@@ -203,20 +212,22 @@ def timeseries_plot(results: list[dict], dt_h: float, path: Path, real: bool = F
     axes[1, 0].set_ylabel("SOC total [kWh]")
     axes[0, 0].legend(loc="upper left", ncol=3)
     axes[1, 0].legend(loc="upper left")
-    source = f"date reale, {SEASON_STARTS_REAL[TS_SEASON]:%d.%m.%Y}" if real else f"seed {TS_SEED}"
+    source = (f"PV din {SEASON_STARTS_REAL[TS_SEASON]:%d.%m.%Y}, prețuri PZU {price_year}" if real
+              else f"seed {TS_SEED}")
     fig.suptitle(f"Iarnă, {source}, primele {TS_DAYS} zile (comunitate, 10 case)", fontsize=10, x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
 
 
-def make_charts(summary: dict, results: list[dict], n_days: int, dt_h: float, out: Path, real: bool = False) -> None:
+def make_charts(summary: dict, results: list[dict], n_days: int, dt_h: float, out: Path, real: bool = False,
+                price_year: int = ds.DEFAULT_PRICE_YEAR) -> None:
     grouped_bar(summary, "cost_lei", f"Cost [lei / {n_days} zile]", out / "cost.png")
     grouped_bar(summary, "ssr", "Autarhie (SSR) [%]", out / "ssr.png", scale=100)
     grouped_bar(summary, "scr", "Autoconsum (SCR) [%]", out / "scr.png", scale=100)
     grouped_bar(summary, "peak_import_kw", "Vârf import [kW]", out / "varf_import.png")
     grouped_bar(summary, "curtail_kwh", "Energie PV limitată [kWh]", out / "curtailment.png")
-    timeseries_plot(results, dt_h, out / "serie_timp_iarna.png", real)
+    timeseries_plot(results, dt_h, out / "serie_timp_iarna.png", real, price_year)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -230,15 +241,16 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.plot_only:
         summary = read_summary_csv(out / "summary.csv")
-        results = run_parallel(run_one, timeseries_tasks(args.days, args.dt, args.real, args.deg), _describe,
-                               args.workers)
+        results = run_parallel(run_one, timeseries_tasks(args.days, args.dt, args.real, args.deg, args.price_year),
+                               _describe, args.workers)
     else:
-        results = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg)
+        results = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg, args.price_year,
+                          seasons_to_run(args))
         rows = [r["metrics"] for r in results if r["metrics"]["seed"] < args.seeds]
         summary = summarize(rows, args.seeds)
         write_metrics_csv(rows, out / "metrics.csv")
         write_summary_csv(summary, out / "summary.csv")
-    make_charts(summary, results, args.days, args.dt, out, args.real)
+    make_charts(summary, results, args.days, args.dt, out, args.real, args.price_year)
     print_summary(summary)
     print(f"\nRezultate scrise in {out}")
 

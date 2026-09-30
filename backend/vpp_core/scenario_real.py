@@ -1,10 +1,13 @@
 """
-Scenario from real 2023 data (PVGIS, PZU via data_sources.py); sources in backend/data/README.md.
+Scenario from real data (PVGIS, PZU via data_sources.py); sources in backend/data/README.md.
+PV and the calendar (weekdays, holidays, seasons of the load) are those of 2023; the PZU prices are taken
+from `price_year` at the same month, day and hour. The tariff components below are the 2026 ones for every
+price year.
 Load: the appliance list (load_source="dispozitive", backend/data/dispozitive.csv, see load_model.py) or the
 DEER statistical profile scaled to an annual consumption ("deer").
 
     import  = (PZU + SUPPLY_MARGIN + NETWORK_ADDER) x (1 + VAT)
-              PZU: Ember/ENTSO-E day-ahead, lei/kWh at 4.9465 RON/EUR
+              PZU: Ember/ENTSO-E day-ahead, lei/kWh at the BNR average rate of the price year
               SUPPLY_MARGIN 0.223: Hidroelectrica Hidro DINAMIC C, Jan 2025 (0.15 + 0.073 lei/kWh)
               NETWORK_ADDER 0.5345: regulated, excl. VAT (Electrica Furnizare, Delgaz Grid area, 2026):
               transport 0.03645 + system services 0.01470 + distribution LV 0.38791 + green
@@ -79,7 +82,10 @@ def _deer_profile(weights96: np.ndarray, dt_h: float) -> np.ndarray:
 def _check_dates(start: date, n_days: int) -> None:
     end = start + timedelta(days=n_days - 1)
     if start.year != ds.YEAR or end.year != ds.YEAR:
-        raise ValueError(f"datele reale acopera doar {ds.YEAR}: {start} + {n_days} zile iese din an")
+        raise ValueError(
+            f"PV si calendarul acopera doar {ds.YEAR}: {start} + {n_days} zile iese din an "
+            "(anul preturilor se alege cu price_year)"
+        )
 
 
 def _pv_from_pvgis(
@@ -125,10 +131,18 @@ def _load_from_deer(
 
 
 def _prices_from_pzu(
-    first_day: int, n_days: int, dt_h: float, p2p_price_factor: float, export_rule: str
+    start: date, n_days: int, dt_h: float, p2p_price_factor: float, export_rule: str, price_year: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(import, export, p2p), each (n_steps,) lei/kWh (formulas in the module docstring)."""
-    pzu = repeat_hourly(ds.load_prices_lei_kwh()[first_day : first_day + n_days], dt_h)
+    """(import, export, p2p), each (n_steps,) lei/kWh (formulas in the module docstring). The price rows are
+    indexed by day of year: all the years have 365 rows, so the same row is the same month and day."""
+    first_day = start.timetuple().tm_yday - 1
+    hourly = ds.load_prices_lei_kwh(price_year)[first_day : first_day + n_days]
+    if np.isnan(hourly).any():
+        raise ValueError(
+            f"preturile PZU {price_year} se termina pe {ds.last_price_day(price_year):%d.%m.%Y}: "
+            f"fereastra de {n_days} zile care incepe pe {start:%d.%m} nu este acoperita"
+        )
+    pzu = repeat_hourly(hourly, dt_h)
     price_import = (pzu + SUPPLY_MARGIN + NETWORK_ADDER) * (1 + VAT)
     price_export = pzu + SUPPLY_MARGIN if export_rule == "energie_activa" else pzu.copy()
     price_p2p = p2p_price_factor * price_import
@@ -146,6 +160,7 @@ def generate_scenario_real(
     p2p_price_factor: float = 0.7,
     export_rule: str = "energie_activa",
     load_source: str = "dispozitive",
+    price_year: int = ds.DEFAULT_PRICE_YEAR,
 ) -> Scenario:
     spd = steps_per_day_of(dt_h)
     if n_days < 1:
@@ -170,7 +185,9 @@ def generate_scenario_real(
 
         critical, flexible = community_load(community, DISPOZITIVE_CSV, start, n_days, dt_h, seed,
                                             fallback=(critical, flexible))
-    price_import, price_export, price_p2p = _prices_from_pzu(first_day, n_days, dt_h, p2p_price_factor, export_rule)
+    price_import, price_export, price_p2p = _prices_from_pzu(
+        start, n_days, dt_h, p2p_price_factor, export_rule, price_year
+    )
 
     return Scenario(
         dt_h=dt_h,

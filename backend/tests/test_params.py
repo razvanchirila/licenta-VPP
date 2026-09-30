@@ -27,6 +27,14 @@ def test_default_community_layout():
     assert sum(h.battery.capacity_kwh for h in c.houses if h.battery) == 5 * 16 + 3 * 32
 
 
+def test_profile_id_defaults_to_none_and_must_be_a_house_number():
+    assert HouseParams(id=3).profile_id is None
+    assert all(h.profile_id is None for h in default_community().houses)
+    assert HouseParams(id=57, profile_id=4).profile_id == 4
+    with pytest.raises(ValueError):
+        HouseParams(id=1, profile_id=0)
+
+
 def test_inverter_must_be_positive_but_may_be_unlimited():
     assert HouseParams(id=1, inverter_kw=math.inf).inverter_kw == math.inf
     with pytest.raises(ValueError):

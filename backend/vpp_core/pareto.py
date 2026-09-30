@@ -1,7 +1,8 @@
 """
 Cost / peak trade-off of the MPC demand charge: one MPC run per (season, seed, peak_cost).
 
-Run from backend/:   python -m vpp_core.pareto [--seeds 3] [--days 7] [--dt 0.25] [--real] [--deg 0.45]
+Run from backend/:   python -m vpp_core.pareto [--seeds 3] [--days 7] [--dt 0.25] [--deg 0.45]
+                                                [--real [--price-year 2023|2025|2026]]
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from vpp_core import data_sources as ds
 from vpp_core.metrics import compute_metrics
 from vpp_core.optimizer import MPCController
 from vpp_core.params import default_community
@@ -26,6 +28,7 @@ from vpp_core.reporting import (
     output_dir,
     plot_style,
     run_parallel,
+    seasons_to_run,
     utf8_console,
     weights,
     write_csv,
@@ -38,10 +41,10 @@ SEASON_COLORS = {"iarna": COLORS["fara_baterie"], "toamna": COLORS["baterie_loca
 CSV_KEYS = ["season", "seed", "peak_cost", "cost_lei", "peak_import_kw", "ssr"]
 
 
-def run_one(task: tuple[str, int, float, int, float, bool, float | None]) -> dict:
-    season, seed, peak_cost, n_days, dt_h, real, deg_cost = task
+def run_one(task: tuple[str, int, float, int, float, bool, float | None, int]) -> dict:
+    season, seed, peak_cost, n_days, dt_h, real, deg_cost, price_year = task
     community = default_community()
-    scenario = make_scenario(season, seed, n_days, dt_h, real)
+    scenario = make_scenario(season, seed, n_days, dt_h, real, price_year=price_year)
     t0 = time.perf_counter()
     controller = MPCController(seed=seed, weights=weights(deg_cost, peak_cost=peak_cost), name="mpc_varf")
     metrics = compute_metrics(simulate(community, scenario, controller))["community"]
@@ -57,9 +60,10 @@ def _describe(row: dict) -> str:
 
 
 def run_all(n_seeds: int, n_days: int, dt_h: float, workers: int | None,
-            real: bool = False, deg_cost: float | None = None) -> list[dict]:
-    tasks = [(season, seed, peak_cost, n_days, dt_h, real, deg_cost)
-             for peak_cost in PEAK_COSTS for season in PARETO_SEASONS for seed in range(n_seeds)]
+            real: bool = False, deg_cost: float | None = None, price_year: int = ds.DEFAULT_PRICE_YEAR,
+            seasons: tuple[str, ...] = PARETO_SEASONS) -> list[dict]:
+    tasks = [(season, seed, peak_cost, n_days, dt_h, real, deg_cost, price_year)
+             for peak_cost in PEAK_COSTS for season in seasons for seed in range(n_seeds)]
     rows = run_parallel(run_one, tasks, _describe, workers)
     return sorted(rows, key=lambda row: (PARETO_SEASONS.index(row["season"]), row["peak_cost"], row["seed"]))
 
@@ -71,7 +75,7 @@ def read_csv(path: Path) -> list[dict]:
 
 
 def means(rows: list[dict]) -> dict[str, list[tuple[float, float, float]]]:
-    """season -> [(peak_cost, mean cost, mean peak)]."""
+    """season -> [(peak_cost, mean cost, mean peak)], for the seasons that have rows."""
     out = {}
     for season in PARETO_SEASONS:
         points = []
@@ -80,7 +84,8 @@ def means(rows: list[dict]) -> dict[str, list[tuple[float, float, float]]]:
             if selected:
                 points.append((peak_cost, float(np.mean([r["cost_lei"] for r in selected])),
                                float(np.mean([r["peak_import_kw"] for r in selected]))))
-        out[season] = points
+        if points:
+            out[season] = points
     return out
 
 
@@ -88,7 +93,7 @@ def pareto_plot(rows: list[dict], n_days: int, path: Path) -> None:
     """Log x so the peak_cost = 0 point (~40 kW) does not squash the 1-8 kW region."""
     plt = plot_style()
     data = means(rows)
-    fig, axes = plt.subplots(1, len(data), figsize=(8, 3.8))
+    fig, axes = plt.subplots(1, len(data), figsize=(4 * len(data), 3.8))
     for ax, (season, points) in zip(np.atleast_1d(axes), data.items(), strict=True):
         peaks = [peak for _, _, peak in points]
         costs = [cost for _, cost, _ in points]
@@ -128,7 +133,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.plot_only:
         rows = read_csv(out / "pareto.csv")
     else:
-        rows = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg)
+        covered = seasons_to_run(args)
+        seasons = tuple(season for season in PARETO_SEASONS if season in covered)
+        rows = run_all(args.seeds, args.days, args.dt, args.workers, args.real, args.deg, args.price_year, seasons)
         write_csv(rows, CSV_KEYS, out / "pareto.csv")
     pareto_plot(rows, args.days, out / "pareto.png")
     print_table(rows)

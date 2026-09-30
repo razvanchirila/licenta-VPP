@@ -7,9 +7,10 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
+from vpp_core import data_sources as ds
 from vpp_core.optimizer import LPWeights
 from vpp_core.params import CommunityParams, default_community
 from vpp_core.scenario import Scenario, generate_scenario
@@ -26,7 +27,7 @@ SEASONS = (
     ("toamna", "Toamnă", date(2025, 10, 10)),
 )
 SEASON_LABELS = {key: label for key, label, _ in SEASONS}
-# same weeks in 2023, the only year covered by all three real data sources
+# same weeks in 2023, the PV and calendar year of the real data; prices: the same days of the price year
 SEASON_STARTS_REAL = {"iarna": date(2023, 1, 10), "primavara": date(2023, 4, 10),
                       "vara": date(2023, 7, 10), "toamna": date(2023, 10, 10)}
 
@@ -59,12 +60,21 @@ def season_index(key: str) -> int:
     return [k for k, _, _ in SEASONS].index(key)
 
 
+def seasons_with_prices(price_year: int, n_days: int) -> tuple[str, ...]:
+    """Season keys whose real-data week is covered by the prices of `price_year` (a year in progress stops early)."""
+    last = ds.last_price_day(price_year)
+    return tuple(key for key, start in SEASON_STARTS_REAL.items()
+                 if (start + timedelta(days=n_days - 1)).replace(year=price_year) <= last)
+
+
 def make_scenario(
-    season: str, seed: int, n_days: int, dt_h: float, real: bool, community: CommunityParams | None = None
+    season: str, seed: int, n_days: int, dt_h: float, real: bool, community: CommunityParams | None = None,
+    price_year: int = ds.DEFAULT_PRICE_YEAR,
 ) -> Scenario:
     community = default_community() if community is None else community
     if real:
-        return generate_scenario_real(community, start=SEASON_STARTS_REAL[season], n_days=n_days, dt_h=dt_h, seed=seed)
+        return generate_scenario_real(community, start=SEASON_STARTS_REAL[season], n_days=n_days, dt_h=dt_h, seed=seed,
+                                      price_year=price_year)
     start = next(s for k, _, s in SEASONS if k == season)
     return generate_scenario(community, start=start, n_days=n_days, dt_h=dt_h, seed=seed)
 
@@ -116,9 +126,13 @@ def add_common_arguments(parser: argparse.ArgumentParser, default_seeds: int) ->
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--dt", type=float, default=0.25, help="pasul de timp in ore")
     parser.add_argument("--workers", type=int, default=None, help="procese in paralel (implicit: toate nucleele)")
-    parser.add_argument("--out", type=Path, default=None, help="implicit results/ (sau results/real/ cu --real)")
+    parser.add_argument("--out", type=Path, default=None, help="implicit results/ (sau results/real/<an>/ cu --real)")
     parser.add_argument(
-        "--real", action="store_true", help="scenariu din date reale 2023 (PVGIS, PZU Ember, profil DEER)"
+        "--real", action="store_true", help="scenariu din date reale (PV PVGIS 2023, PZU Ember din --price-year)"
+    )
+    parser.add_argument(
+        "--price-year", type=int, choices=ds.PRICE_YEARS, default=ds.DEFAULT_PRICE_YEAR,
+        help="anul preturilor PZU, doar cu --real (implicit %(default)s)",
     )
     parser.add_argument(
         "--deg", type=float, default=None, help="cost de degradare baterie lei/kWh pentru LP/MPC (implicit LPWeights)"
@@ -132,9 +146,27 @@ def utf8_console() -> None:
 
 
 def output_dir(args: argparse.Namespace) -> Path:
-    out = args.out if args.out is not None else (RESULTS_REAL_DIR if args.real else RESULTS_DIR)
+    default = RESULTS_REAL_DIR / str(args.price_year) if args.real else RESULTS_DIR
+    out = args.out if args.out is not None else default
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def seasons_to_run(args: argparse.Namespace) -> tuple[str, ...]:
+    """All four seasons, minus the real-data weeks that --price-year does not cover (said on the console)."""
+    keys = tuple(key for key, _, _ in SEASONS)
+    if not args.real:
+        return keys
+    covered = seasons_with_prices(args.price_year, args.days)
+    skipped = [key for key in keys if key not in covered]
+    if skipped:
+        print(f"Preturile {args.price_year} se termina pe {ds.last_price_day(args.price_year):%d.%m.%Y}: "
+              f"fara {', '.join(skipped)}")
+    return covered
+
+
+def data_label(real: bool, price_year: int) -> str:
+    return f"PV {ds.YEAR}, prețuri PZU {price_year}" if real else "scenarii sintetice"
 
 
 def plot_style():

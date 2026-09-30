@@ -1,8 +1,12 @@
+import warnings
+
 import numpy as np
 import pytest
 
+from vpp_core import load_model as lm
 from vpp_core import sensitivity as sens
 from vpp_core.params import MODULE_PROBABILITIES, PV_KWP_CHOICES, deye_se_f16, random_community
+from vpp_core.reporting import make_scenario
 
 TINY = sens.Settings(n_seeds=1, n_days=1, dt_h=1.0, real=False, workers=0, scale_sizes=(2, 10))
 
@@ -30,6 +34,39 @@ def test_random_community_battery_share_and_modes():
     for n, probability in enumerate(MODULE_PROBABILITIES):
         assert abs(np.mean(modules == n) - probability) < 0.05
     assert {h.mode for h in c.houses} == {"Eco", "Profit"}
+
+
+def test_random_community_profiles_come_from_the_appliance_list():
+    ids = sorted(lm.by_house(lm.load_appliances()))
+    c = random_community(200, seed=0)
+    drawn = [h.profile_id for h in c.houses]
+    assert set(drawn) == set(ids)                        # 200 draws reach all 10 templates
+    assert min(np.bincount(drawn)[1:]) >= 8
+    assert [h.profile_id for h in random_community(200, seed=1).houses] != drawn
+    assert {h.profile_id for h in random_community(50, seed=0, profile_ids=(3, 7)).houses} == {3, 7}
+
+
+def test_random_community_pv_and_batteries_do_not_depend_on_the_profiles():
+    """The profile ids are drawn after everything else, so the communities of the older scale studies are kept."""
+    rng = np.random.default_rng(5)
+    expected = []
+    for _ in range(12):
+        modules = int(rng.choice(len(MODULE_PROBABILITIES), p=MODULE_PROBABILITIES))
+        expected.append((float(rng.choice(PV_KWP_CHOICES)), deye_se_f16(modules), rng.random() < 0.5))
+    c = random_community(12, seed=5)
+    assert [(h.pv_kwp, h.battery, h.mode == "Eco") for h in c.houses] == expected
+    other = random_community(12, seed=5, profile_ids=(1,))
+    assert [(h.pv_kwp, h.battery, h.mode) for h in other.houses] == [(h.pv_kwp, h.battery, h.mode) for h in c.houses]
+
+
+def test_scale_scenario_uses_device_load_for_every_house():
+    community = random_community(40, seed=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")                   # no "case lipsesc" fallback warning
+        scenario = make_scenario("iarna", 2, 1, 0.5, False, community)
+    crit, flex = lm.community_load(community, lm.DISPOZITIVE_CSV, scenario.start, 1, 0.5, 2)
+    np.testing.assert_array_equal(scenario.load_crit_kw, crit)
+    np.testing.assert_array_equal(scenario.load_flex_kw, flex)
 
 
 def test_random_community_rejects_empty():

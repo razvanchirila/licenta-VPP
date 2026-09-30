@@ -2,8 +2,8 @@
 Live simulation on top of vpp_core: one simulated step (dt_h, default 15 min) per real tick.
 Step order (SimulationLoop._step): community from the DB -> scenario slice (PV, prices) + load from the
 switched-on devices -> controller dispatch -> batteries -> P2P trades -> persist in one transaction ->
-advance clock and broadcast. PV and prices come from the 2023 data (SIM_DATA=real, the simulated
-calendar day mapped to the same day of the data year) or from the synthetic generator.
+advance clock and broadcast. With SIM_DATA=real the simulated calendar day is mapped to the same day of
+the data: PV from 2023, prices from SIM_PRICE_YEAR; otherwise both come from the synthetic generator.
 """
 from __future__ import annotations
 
@@ -62,13 +62,16 @@ def data_day(day: date, year: int) -> date:
         return day.replace(year=year, day=28)
 
 
-def real_data_missing(year: int) -> str | None:
-    """Why the real data cannot be used, or None."""
-    missing = [p.name for p in (ds.PRICES_CSV, ds.PV_CSV, ds.DEER_CSV) if not p.exists()]
+def real_data_missing(year: int, days: tuple[date, ...] = ()) -> str | None:
+    """Why the real data cannot be used for `days` with the prices of `year`, or None."""
+    if year not in ds.PRICE_YEARS:
+        return f"SIM_PRICE_YEAR={year}, dar exista preturi doar pentru {ds.PRICE_YEARS}"
+    missing = [p.name for p in (ds.prices_csv(year), ds.PV_CSV, ds.DEER_CSV) if not p.exists()]
     if missing:
         return f"lipsesc {', '.join(missing)} din {ds.DATA_DIR}"
-    if year != ds.YEAR:
-        return f"SIM_PRICE_YEAR={year}, dar datele acopera doar {ds.YEAR}"
+    last = ds.last_price_day(year)
+    if any(data_day(d, year) > last for d in days):
+        return f"preturile {year} se termina pe {last:%d.%m.%Y}"
     return None
 
 
@@ -193,7 +196,7 @@ class SimulationLoop:
     def _resolve_data_source(self) -> str:
         if settings.sim_data != "real":
             return "sintetic"
-        reason = real_data_missing(self.data_year)
+        reason = real_data_missing(self.data_year, self.window_days)
         if reason is None:
             self._fallback_reason = None
             return "real"
@@ -316,9 +319,9 @@ class SimulationLoop:
         for d in self.window_days:
             seed = self.config.seed + d.toordinal()
             if self.data_source == "real":
-                part = generate_scenario_real(self.community, start=data_day(d, self.data_year), n_days=1,
+                part = generate_scenario_real(self.community, start=data_day(d, ds.YEAR), n_days=1,
                                               dt_h=self.dt_h, seed=seed, p2p_price_factor=self.config.p2p_price_factor,
-                                              load_source="deer")
+                                              load_source="deer", price_year=self.data_year)
             else:
                 part = generate_scenario(self.community, start=d, n_days=1, dt_h=self.dt_h, seed=seed,
                                          p2p_price_factor=self.config.p2p_price_factor, load_source="sintetic")

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 import numpy as np
@@ -65,7 +66,8 @@ def deye_se_f16(modules: int) -> BatteryParams | None:
 @dataclass(frozen=True)
 class HouseParams:
     """inverter_kw bounds the net AC power of the house in both directions:
-    |(pv - curtail) + dis - ch| <= inverter_kw (math.inf = no limit)."""
+    |(pv - curtail) + dis - ch| <= inverter_kw (math.inf = no limit).
+    profile_id: the house (column casa) of dispozitive.csv whose appliances this house has; None = its own id."""
 
     id: int
     pv_kwp: float = 10.0
@@ -74,10 +76,13 @@ class HouseParams:
     p2p_enabled: bool = True
     initial_soc_ratio: float = 0.5
     inverter_kw: float = INVERTER_KW
+    profile_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.pv_kwp < 0:
             raise ValueError("pv_kwp must be >= 0")
+        if self.profile_id is not None and self.profile_id < 1:
+            raise ValueError("profile_id must be >= 1")
         if not self.inverter_kw > 0:
             raise ValueError("inverter_kw must be > 0")
         if self.mode not in ("Eco", "Profit"):
@@ -143,11 +148,16 @@ MODULE_PROBABILITIES = (0.2, 0.5, 0.3)   # 0 / 1 / 2 SE-F16 modules
 IMPORT_KW_PER_HOUSE, EXPORT_KW_PER_HOUSE, LINE_KW_PER_HOUSE = 5.0, 4.0, 3.0
 
 
-def random_community(n_houses: int, seed: int = 0) -> CommunityParams:
+def random_community(n_houses: int, seed: int = 0, profile_ids: Sequence[int] | None = None) -> CommunityParams:
     """Mixed community for the scaling study: PV 5-12 kWp, 0 / 1 / 2 SE-F16 modules with probabilities
-    MODULE_PROBABILITIES, random mode; grid limits proportional to n_houses."""
+    MODULE_PROBABILITIES, random mode, appliances of a random house of `profile_ids` (default: the houses
+    listed in dispozitive.csv); grid limits proportional to n_houses."""
     if n_houses < 1:
         raise ValueError("n_houses must be >= 1")
+    if profile_ids is None:
+        from vpp_core.load_model import by_house, load_appliances  # load_model imports this module
+
+        profile_ids = sorted(by_house(load_appliances()))
     rng = np.random.default_rng(seed)
     houses = []
     for house_id in range(1, n_houses + 1):
@@ -156,6 +166,9 @@ def random_community(n_houses: int, seed: int = 0) -> CommunityParams:
             id=house_id, pv_kwp=float(rng.choice(PV_KWP_CHOICES)), battery=deye_se_f16(modules),
             mode="Eco" if rng.random() < 0.5 else "Profit",
         ))
+    # drawn after the loop, so PV, battery and mode are the same as before the profiles existed
+    profiles = rng.choice(np.asarray(profile_ids), n_houses)
+    houses = [replace(house, profile_id=int(profile)) for house, profile in zip(houses, profiles, strict=True)]
     return CommunityParams(
         houses=tuple(houses),
         grid=GridParams(

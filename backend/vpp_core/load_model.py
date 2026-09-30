@@ -284,17 +284,20 @@ def community_load(
     community: CommunityParams, path: Path | str, start: date, n_days: int, dt_h: float, seed: int,
     fallback: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """(critical, flexible), each (n_houses, n_steps) kW; house i uses casa = HouseParams.id in the CSV.
+    """(critical, flexible), each (n_houses, n_steps) kW; house i uses the rows with casa = HouseParams.profile_id
+    (or its id when profile_id is None). The random stream is always the one of the house id, so two houses
+    with the same appliances still run them at different times.
     Houses missing from the CSV take their rows from `fallback` (with one warning) or raise without it."""
     groups = by_house(load_appliances(path))
     n_steps = n_days * _steps_per_day(dt_h)
     critical, flexible = np.zeros((community.n_houses, n_steps)), np.zeros((community.n_houses, n_steps))
     missing = []
     for i, house in enumerate(community.houses):
-        if house.id not in groups:
+        profile = house.id if house.profile_id is None else house.profile_id
+        if profile not in groups:
             missing.append(house.id)
             continue
-        critical[i], flexible[i] = house_load_profile(groups[house.id], start, n_days, dt_h, house_rng(seed, house.id))
+        critical[i], flexible[i] = house_load_profile(groups[profile], start, n_days, dt_h, house_rng(seed, house.id))
     if missing:
         if fallback is None:
             raise ValueError(f"casele {missing} lipsesc din {Path(path).name}")
