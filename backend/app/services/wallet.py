@@ -24,12 +24,6 @@ async def get_wallet(session: AsyncSession, house_id: int | None) -> WalletModel
     return wallet
 
 
-async def find_wallets(session: AsyncSession, house_ids: set[int]) -> list[WalletModel]:
-    if not house_ids:
-        return []
-    return list((await session.execute(select(WalletModel).where(WalletModel.house_id.in_(house_ids)))).scalars())
-
-
 async def find_reserve(session: AsyncSession, house_id: int) -> VPPReserveModel | None:
     return (await session.execute(
         select(VPPReserveModel).where(VPPReserveModel.house_id == house_id))).scalar_one_or_none()

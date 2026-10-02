@@ -138,8 +138,11 @@ def community_from_houses(houses: list[HouseModel], grid: GridParams, min_p2p_ba
         init_ratio = 0.5
         if h.battery:
             b = h.battery
+            # a backup reserve raised above the stored energy is reached by charging: until then the floor is
+            # the current SOC, otherwise the battery would be clamped up to the reserve with energy from nowhere
+            soc_min = min(b.soc_min_kwh, b.soc_kwh)
             battery = BatteryParams(
-                capacity_kwh=b.capacity_kwh, soc_min_ratio=min(max(b.soc_min_kwh / b.capacity_kwh, 0.0), 0.95),
+                capacity_kwh=b.capacity_kwh, soc_min_ratio=min(max(soc_min / b.capacity_kwh, 0.0), 0.95),
                 p_ch_max_kw=b.p_ch_max_kw, p_dis_max_kw=b.p_dis_max_kw, eta_ch=b.eta_ch, eta_dis=b.eta_dis,
             )
             init_ratio = max(0.5, battery.soc_min_ratio)
@@ -372,7 +375,11 @@ class SimulationLoop:
                         b.soc_kwh = soc
                 raise
         result = self._result(houses, inputs, dispatch, settled)
+        day = self.day
         self._advance_clock(result)
+        if self.day != day:
+            # the new day's prices must be there right after midnight, not only after its first step
+            self._sync(houses)
         return result
 
     def _step_inputs(self) -> StepInputs:

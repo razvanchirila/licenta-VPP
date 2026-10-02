@@ -7,6 +7,7 @@ import { AuthContext, type AuthContextValue } from '../hooks/useAuth'
 import type { Me } from '../types/api'
 
 const NOT_ADMIN = 'Contul nu are rol de administrator.'
+const SESSION_RETRY_MS = 2_000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
@@ -31,26 +32,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(() => logout('Sesiunea a expirat, autentifică-te din nou.'))
   }, [logout])
 
-  // a token left in sessionStorage from before a reload is checked once against /me
+  // a token left in sessionStorage from before a reload is checked against /me
   useEffect(() => {
     if (!token || user) return
     let cancelled = false
-    api
-      .me()
-      .then((me) => {
-        if (cancelled) return
-        if (me.is_admin) {
-          setUser(me)
-          setChecking(false)
-        } else {
-          logout(NOT_ADMIN)
-        }
-      })
-      .catch((e: unknown) => {
-        if (!cancelled && !(e instanceof ApiError && e.status === 401)) logout((e as Error).message)
-      })
+    let retryTimer: number | undefined
+    const check = () => {
+      api
+        .me()
+        .then((me) => {
+          if (cancelled) return
+          if (me.is_admin) {
+            setUser(me)
+            setChecking(false)
+          } else {
+            logout(NOT_ADMIN)
+          }
+        })
+        .catch((e: unknown) => {
+          if (cancelled || (e instanceof ApiError && e.status === 401)) return
+          // no answer or a server error says nothing about the token (a reload also aborts this request):
+          // keep it and ask again instead of logging out
+          if (e instanceof ApiError && (e.status === 0 || e.status >= 500)) {
+            retryTimer = window.setTimeout(check, SESSION_RETRY_MS)
+            return
+          }
+          logout((e as Error).message)
+        })
+    }
+    check()
     return () => {
       cancelled = true
+      window.clearTimeout(retryTimer)
     }
   }, [token, user, logout])
 

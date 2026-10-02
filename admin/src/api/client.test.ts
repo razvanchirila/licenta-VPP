@@ -47,7 +47,18 @@ describe('request', () => {
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
+  it('without a token does not call the server or the 401 handler', async () => {
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+    const fetchMock = mockFetch(200, { ok: true })
+
+    await expect(request('/api/vpp/stats')).rejects.toMatchObject({ status: 401 })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it('reports a network failure as status 0', async () => {
+    saveToken('abc')
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))),

@@ -1,10 +1,10 @@
 """
-End-to-end tests of the HTTP API on the PostgreSQL test database (TEST_DATABASE_URL, see conftest.py).
+Tests of the HTTP API on the PostgreSQL test database (TEST_DATABASE_URL, see conftest.py).
 The simulation loop is loaded but not started; steps are triggered by hand.
 """
 import asyncio
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from conftest import api_database_url, recreate_tables
@@ -20,7 +20,7 @@ os.environ.update({
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
-from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
 from app.db.database import close_db, get_session_context  # noqa: E402
@@ -252,6 +252,41 @@ def test_money_is_conserved_across_wallets(client, admin):
     assert total == pytest.approx(10 * 100 + 10000, abs=0.05)
 
 
+def test_concurrent_settlements_do_not_lose_money(client):
+    """Each trade runs in its own session at the same time; without row locks a stale balance read by one
+    session overwrote what another had just committed and the community lost money."""
+    async def run():
+        engine = create_async_engine(settings.database_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def balances():
+            async with engine.connect() as conn:
+                rows = await conn.execute(text("SELECT house_id, balance_lei FROM wallets"))
+                return {h: b for h, b in rows}
+
+        async def trade(seller, buyer):
+            async with factory() as session:
+                await settlement.SettlementService(session).settle_trade(
+                    settlement.Trade(seller, buyer, 0.5, 1.0, 1.0), datetime(2025, 6, 1, 12))
+                await asyncio.sleep(0)
+                await session.commit()
+
+        try:
+            before = await balances()
+            pairs = [(5, 6), (6, 5), (7, 5), (5, 7), (6, 7)] * 6
+            await asyncio.gather(*(trade(s, b) for s, b in pairs))
+            after = await balances()
+        finally:
+            await engine.dispose()
+        return before, after, pairs
+
+    before, after, pairs = asyncio.run(run())
+    assert sum(after.values()) == pytest.approx(sum(before.values()), abs=1e-6)
+    for house in (5, 6, 7):
+        net = sum(0.5 for s, _ in pairs if s == house) - sum(0.5 for _, b in pairs if b == house)
+        assert after[house] == pytest.approx(before[house] + net, abs=1e-6)
+
+
 def test_settings_change_reaches_the_simulation(client, user3, admin):
     r = client.put("/api/me/settings", json={"mode": "Profit", "backup_reserve_percent": 30}, headers=user3)
     assert r.status_code == 200 and r.json()["mode"] == "Profit" and r.json()["backup_reserve_percent"] == 30
@@ -259,6 +294,32 @@ def test_settings_change_reaches_the_simulation(client, user3, admin):
     house3 = next(h for h in step["houses"] if h["id"] == 3)
     assert house3["mode"] == "Profit"
     assert house3["soc_kwh"] >= 0.3 * 16 - 1e-6          # one SE-F16 module
+
+
+def test_reserve_above_soc_does_not_create_energy(client, user1, admin):
+    """Raising the backup reserve above the stored energy used to clamp the SOC up to the reserve."""
+    battery = client.get("/api/houses/1/battery", headers=user1).json()
+    excess = round(battery["soc_kwh"] - 0.2 * battery["capacity_kwh"], 2)
+    if excess > 0:
+        r = client.post("/api/wallet/1/transfer-to-vpp", json={"energy_kwh": excess}, headers=user1)
+        assert r.status_code == 200
+    soc = client.get("/api/houses/1/battery", headers=user1).json()["soc_kwh"]
+    assert client.put("/api/me/settings", json={"backup_reserve_percent": 60}, headers=user1).status_code == 200
+    try:
+        for _ in range(2):
+            step = client.post("/api/sim/step", headers=admin).json()
+            house = next(h for h in step["houses"] if h["id"] == 1)
+            expected = soc + (0.95 * house["ch_kw"] - house["dis_kw"] / 0.95) * step["dt_h"]
+            assert house["soc_kwh"] == pytest.approx(expected, abs=2e-3)
+            assert house["dis_kw"] == 0
+            soc = house["soc_kwh"]
+    finally:
+        client.put("/api/me/settings", json={"backup_reserve_percent": 10}, headers=user1)
+
+
+def test_speed_message_is_written_the_romanian_way(client, admin):
+    for seconds, message in ((0.5, "Un pas la 0,5 s"), (2, "Un pas la 2 s")):
+        assert client.post("/api/sim/speed", json={"tick_seconds": seconds}, headers=admin).json()["message"] == message
 
 
 def test_config_switches_controller_to_mpc(client, admin, user1):
@@ -381,12 +442,10 @@ def test_every_control_route_is_admin_only(client, user1):
 
 
 def test_websocket_requires_a_valid_token(client, user1):
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/admin/ws"):
-            pass
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/api/admin/ws?token=nu.e.token"):
-            pass
+    for url in ("/api/admin/ws", "/api/admin/ws?token=nu.e.token"):
+        with client.websocket_connect(url) as ws, pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+        assert closed.value.code == 1008
     token = user1["Authorization"].split()[1]
     with client.websocket_connect(f"/api/admin/ws?token={token}") as ws:
         hello = ws.receive_json()
@@ -412,3 +471,15 @@ def test_stats_comparison_uses_romanian_month_names(client, user3):
     for key in ("current_month", "previous_month"):
         name, year = body[key].split()
         assert name in months and year.isdigit()
+
+
+# moves the clock into the next day, so it stays the last test of the module
+def test_prices_switch_to_the_new_day_at_midnight(client, admin):
+    status = client.get("/api/sim/status", headers=admin).json()
+    for _ in range(status["steps_per_day"] - status["step_of_day"]):
+        assert client.post("/api/sim/step", headers=admin).status_code == 200
+    status = client.get("/api/sim/status", headers=admin).json()
+    prices = client.get("/api/sim/prices", headers=admin).json()
+    assert status["step_of_day"] == 0 and prices["date"] == status["sim_date"]
+    step = client.post("/api/sim/step", headers=admin).json()
+    assert step["price"]["import"] == pytest.approx(prices["prices"][0]["price_import"], abs=1e-4)

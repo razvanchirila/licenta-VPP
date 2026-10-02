@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Query, WebSocketException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,12 +31,9 @@ async def get_current_user(
 
 
 async def get_ws_user(token: str | None = Query(default=None),
-                      session: AsyncSession = Depends(get_session)) -> UserModel:
-    """WebSocket clients cannot set headers, so the token comes as ?token=..."""
-    user = await _user_from_token(token, session)
-    if user is None:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Token invalid sau lipsa")
-    return user
+                      session: AsyncSession = Depends(get_session)) -> UserModel | None:
+    """WebSocket clients cannot set headers, so the token comes as ?token=...; None when it is missing or invalid."""
+    return await _user_from_token(token, session)
 
 
 def require_admin(user: UserModel = Depends(get_current_user)) -> UserModel:

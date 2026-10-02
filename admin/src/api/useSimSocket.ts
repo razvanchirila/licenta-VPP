@@ -81,7 +81,14 @@ export function useSimSocket(token: string, onMessage: (msg: SocketMessage) => v
       disposed = true
       window.clearInterval(pingTimer)
       window.clearTimeout(retryTimer)
-      ws?.close()
+      const socket = ws
+      if (socket?.readyState === WebSocket.CONNECTING) {
+        // closing a socket that is still connecting makes the browser log an error; close it once open
+        socket.onopen = () => socket.close()
+        socket.onmessage = null
+      } else {
+        socket?.close()
+      }
     }
   }, [token])
 

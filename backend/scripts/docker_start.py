@@ -1,6 +1,7 @@
 """
-Start command of the api container: waits for the database, creates the demo accounts
-(existing ones are skipped, so a restart keeps the data) and then runs main.py.
+Start command of the api container: waits for the database, creates the demo accounts and then runs main.py.
+Existing accounts keep their data; only their password is set again to DEMO_PASSWORD (default 123), which
+seed.py reads from the environment inherited here, so it never shows up in the process list.
 """
 import asyncio
 import os

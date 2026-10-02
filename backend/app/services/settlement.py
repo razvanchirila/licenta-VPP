@@ -7,10 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import TradeTransactionModel, WalletModel, WalletTransactionModel
-from app.services.wallet import find_reserve, find_wallet, find_wallets
+from app.services.wallet import find_reserve
 
 ROUND = 4          # lei are stored with 4 decimals
 EPS = 1e-9
@@ -48,11 +49,26 @@ class SettlementService:
         self.session = session
         self._wallets: dict[int | None, WalletModel] = {}     # loaded once per batch, see settle_trades
 
-    async def _wallet(self, house_id: int | None) -> WalletModel:
-        wallet = self._wallets.get(house_id) or await find_wallet(self.session, house_id)
+    async def _lock(self, house_ids: set[int | None]) -> None:
+        """SELECT ... FOR UPDATE, fresh from the database and always in wallet id order: a simulation step,
+        an admin trade and a VPP transfer running at the same time wait for each other instead of
+        overwriting each other's balances, and cannot deadlock."""
+        missing = {h for h in house_ids if h not in self._wallets}
+        if not missing:
+            return
+        ids = [h for h in missing if h is not None]
+        conds = [WalletModel.house_id.in_(ids)] if ids else []
+        if None in missing:
+            conds.append(WalletModel.house_id.is_(None))
+        query = (select(WalletModel).where(or_(*conds)).order_by(WalletModel.id).with_for_update()
+                 .execution_options(populate_existing=True))
+        for wallet in (await self.session.execute(query)).scalars():
+            self._wallets[wallet.house_id] = wallet
+
+    def _wallet(self, house_id: int | None) -> WalletModel:
+        wallet = self._wallets.get(house_id)
         if wallet is None:
             raise SettlementError(f"casa {house_id} nu are portofel")
-        self._wallets[house_id] = wallet
         return wallet
 
     def _move(self, wallet: WalletModel, amount: float, tx_type: str, description: str,
@@ -80,8 +96,9 @@ class SettlementService:
         (a buyer short of funds gets status 'rejected' and nothing moves); one payout per trade
         (both wallet movements carry reference_id = trade record id)."""
         trade.check()
-        buyer = await self._wallet(trade.buyer_house_id)
-        seller = await self._wallet(trade.seller_house_id)
+        await self._lock({trade.buyer_house_id, trade.seller_house_id})
+        buyer = self._wallet(trade.buyer_house_id)
+        seller = self._wallet(trade.seller_house_id)
         value = trade.value_lei
         record = TradeTransactionModel(
             seller_house_id=trade.seller_house_id, buyer_house_id=trade.buyer_house_id,
@@ -105,9 +122,7 @@ class SettlementService:
 
     async def settle_trades(self, trades: list[Trade], sim_ts: datetime) -> list[TradeTransactionModel]:
         """Settled in order: earlier trades reduce the funds left for later ones."""
-        house_ids = {t.seller_house_id for t in trades} | {t.buyer_house_id for t in trades}
-        for wallet in await find_wallets(self.session, house_ids):
-            self._wallets[wallet.house_id] = wallet
+        await self._lock({t.seller_house_id for t in trades} | {t.buyer_house_id for t in trades})
         return [await self.settle_trade(t, sim_ts) for t in trades]
 
     async def pay_reserve_contribution(self, house_id: int, energy_kwh: float,
@@ -119,8 +134,9 @@ class SettlementService:
         if reserve is None:
             raise SettlementError(f"casa {house_id} nu are rezerva VPP")
         payment = round(energy_kwh * reserve.base_rate_lei_kwh, ROUND)
-        operator = await self._wallet(None)
-        house_wallet = await self._wallet(house_id)
+        await self._lock({None, house_id})
+        operator = self._wallet(None)
+        house_wallet = self._wallet(house_id)
         text = f"Rezerva VPP: {energy_kwh:.2f} kWh @ {reserve.base_rate_lei_kwh:.2f} lei/kWh (casa {house_id})"
         self._move(operator, -payment, "vpp_payment", text, sim_ts)
         self._move(house_wallet, payment, "vpp_payment", text, sim_ts)

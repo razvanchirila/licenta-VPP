@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import styles from './ConfirmDialog.module.css'
 
 interface ConfirmDialogProps {
@@ -12,6 +12,8 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel }: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  const messageId = useId()
 
   useEffect(() => {
     const dialog = ref.current
@@ -21,9 +23,16 @@ export function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, o
   }, [open])
 
   return (
-    <dialog ref={ref} className={styles.dialog} onCancel={onCancel} onClose={onCancel}>
-      <h2>{title}</h2>
-      <p>{message}</p>
+    <dialog
+      ref={ref}
+      className={styles.dialog}
+      aria-labelledby={titleId}
+      aria-describedby={messageId}
+      onCancel={onCancel}
+      onClose={onCancel}
+    >
+      <h2 id={titleId}>{title}</h2>
+      <p id={messageId}>{message}</p>
       <div className={styles.actions}>
         <button type="button" className="btn" onClick={onCancel} autoFocus>
           Renunță

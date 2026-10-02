@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_ws_user, require_admin
@@ -73,9 +73,14 @@ async def manual_trade(body: ManualTradeRequest, _: UserModel = Depends(require_
 
 
 @router.websocket("/ws")
-async def live_updates(websocket: WebSocket, user: UserModel = Depends(get_ws_user)):
+async def live_updates(websocket: WebSocket, user: UserModel | None = Depends(get_ws_user)):
     """One {"type": "connected", ...} message, then one "step" message per simulation step."""
     await websocket.accept()
+    if user is None:
+        # closing before accept makes the server answer the handshake with HTTP 403, which a browser
+        # only reports as code 1006; after accept the client sees 1008 and knows the token is the problem
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token invalid sau lipsa")
+        return
     sim.add_ws(websocket)
     try:
         await websocket.send_json({"type": "connected", "status": sim.status(), "last": sim.last_result})

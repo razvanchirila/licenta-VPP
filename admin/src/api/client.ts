@@ -53,6 +53,8 @@ async function readJson(res: Response): Promise<unknown> {
 export async function request<T>(path: string, { method = 'GET', body, auth = true }: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   const token = auth ? loadToken() : null
+  // after a logout, queries still mounted may refetch once more: without a token there is nothing to ask
+  if (auth && !token) throw new ApiError(401, 'Neautentificat')
   if (token) headers.Authorization = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 

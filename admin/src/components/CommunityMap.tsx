@@ -135,6 +135,7 @@ export function CommunityMap({ step }: { step: StepResult | null }) {
             key={`${f.from}-${f.to}`}
             d={f.path}
             className={styles.flow}
+            data-testid="p2p-flow"
             strokeWidth={2 + 3 * (f.kwh / maxKwh)}
             markerEnd="url(#p2p-arrow)"
           >

@@ -56,7 +56,8 @@ async def resume(_: UserModel = Depends(require_admin)):
 @router.post("/speed")
 async def speed(body: SpeedRequest, _: UserModel = Depends(require_admin)):
     await sim.apply_config(replace(sim.config, tick_seconds=body.tick_seconds))
-    return {"message": f"Un pas la {body.tick_seconds} s", "tick_seconds": body.tick_seconds}
+    seconds = format(body.tick_seconds, "g").replace(".", ",")
+    return {"message": f"Un pas la {seconds} s", "tick_seconds": body.tick_seconds}
 
 
 @router.post("/step")
