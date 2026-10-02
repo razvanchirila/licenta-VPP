@@ -1,0 +1,36 @@
+# Un singur Caddy pentru ambele medii: productia (DOMAIN) si staging (STAGING_DOMAIN).
+# Containerele de productie au in reteaua stivei aliasurile prod-api si prod-web, iar cele de staging
+# stau in reteaua comuna vpp-edge ca staging-api si staging-web; numele scurte api si web exista in ambele
+# stive, deci aici nu se folosesc.
+(site) {
+	encode zstd gzip
+
+	@api path /docs /docs/* /openapi.json /redoc /health
+	handle @api {
+		reverse_proxy {args[0]}-api:8000
+	}
+
+	# aplicatia, panoul /admin si /api/* (inclusiv WebSocket-ul); nginx din web trimite /api/ mai departe la api
+	handle {
+		reverse_proxy {args[0]}-web:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log
+}
+
+{$DOMAIN} {
+	import site prod
+}
+
+{$STAGING_DOMAIN} {
+	import site staging
+	header X-Robots-Tag "noindex, nofollow"
+}

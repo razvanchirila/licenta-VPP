@@ -1,0 +1,15 @@
+# Doar pentru GitHub Actions: cache-ul de straturi Docker pastrat intre rulari (type=gha).
+services:
+  api:
+    build:
+      cache_from:
+        - type=gha,scope=api
+      cache_to:
+        - type=gha,scope=api,mode=max,ignore-error=true
+
+  web:
+    build:
+      cache_from:
+        - type=gha,scope=web
+      cache_to:
+        - type=gha,scope=web,mode=max,ignore-error=true

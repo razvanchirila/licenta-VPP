@@ -9,7 +9,7 @@ Baza de date este întotdeauna PostgreSQL din containerul `db` al `docker-compos
 ## Prima dată
 
 1. `install.bat` creează mediul Python (`.venv` în rădăcina proiectului) și instalează pachetele. Se rulează o singură dată și din nou doar dacă se schimbă `backend/requirements.txt`.
-2. `seed_users.bat` creează conturile demo: `admin` (fără casă) și `user1`..`user10` (casele 1-10), toate cu parola `123` (sau cu parola dată ca argument). Pentru un singur cont, cu containerul `db` pornit:
+2. `seed_users.bat` creează conturile demo: `admin` (fără casă) și `user1`..`user10` (casele 1-10), toate cu parola `123` (sau cu parola dată ca argument, ori cu `DEMO_PASSWORD` din mediu). Conturile demo care există deja primesc din nou această parolă, restul datelor lor rămân neschimbate. Pentru un singur cont, cu containerul `db` pornit:
 
    ```
    .venv\Scripts\python.exe backend\scripts\seed.py admin nume parola
