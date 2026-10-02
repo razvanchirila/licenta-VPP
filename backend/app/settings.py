@@ -4,14 +4,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BACKEND_DIR / ".env")
 
-DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./vpp.db"
+DEFAULT_DATABASE_URL = "postgresql+asyncpg://vpp:vpp@localhost:15432/vpp"
 MIN_SECRET_LENGTH = 16
 
 
@@ -31,21 +31,9 @@ def _env_date(name: str) -> date:
     return date.fromisoformat(raw) if raw else date.today()
 
 
-def _database_url() -> str:
-    """A relative SQLite path is anchored to backend/, not the cwd, so the server, the seed
-    script and the tests open the same file."""
-    url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
-    scheme, sep, path = url.partition(":///")
-    if not scheme.startswith("sqlite") or not sep or path == ":memory:":
-        return url
-    if path.startswith("/") or PureWindowsPath(path).is_absolute():
-        return url
-    return f"{scheme}:///{(BACKEND_DIR / path).resolve().as_posix()}"
-
-
 @dataclass
 class Settings:
-    database_url: str = field(default_factory=_database_url)
+    database_url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL))
     jwt_secret: str = field(default_factory=lambda: os.getenv("JWT_SECRET_KEY", ""))
     jwt_expire_hours: float = field(default_factory=lambda: _env_float("JWT_EXPIRE_HOURS", 24))
     host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))

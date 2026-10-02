@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.settings import settings
@@ -81,5 +81,7 @@ async def seed_houses(session: AsyncSession, community: CommunityParams | None =
         session.add(_initial_tx(operator, settings.operator_wallet_lei, sim_ts))
 
     await session.flush()
+    # explicit ids do not advance the serial sequence; without this the next insert would reuse id 1
+    await session.execute(text("SELECT setval(pg_get_serial_sequence('houses', 'id'), (SELECT max(id) FROM houses))"))
     logger.info("Seeded %d houses, %d devices", len(houses), n_devices)
     return houses

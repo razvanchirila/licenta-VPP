@@ -14,6 +14,14 @@ DEFAULT_PRICE_PER_KWH = 1.0   # rough retail price behind the "estimated cost" f
 CURRENCY = "RON"
 
 
+
+MONTHS_RO = ("ianuarie", "februarie", "martie", "aprilie", "mai", "iunie",
+             "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie")
+
+
+def _month_label(day) -> str:
+    return f"{MONTHS_RO[day.month - 1]} {day.year}"
+
 class TimePeriod(Enum):
     DAY = "day"
     WEEK = "week"
@@ -154,8 +162,8 @@ class AnalyticsService:
         change = _change_percent(current, previous)
         trend = "unchanged" if not change else ("increased" if change > 0 else "decreased")
         return MonthlyComparison(
-            current_month=now.strftime("%B %Y"), current_month_kwh=round(current, 4),
-            previous_month=prev_end.strftime("%B %Y"), previous_month_kwh=round(previous, 4),
+            current_month=_month_label(now), current_month_kwh=round(current, 4),
+            previous_month=_month_label(prev_end), previous_month_kwh=round(previous, 4),
             change_percent=change, trend=trend, projected_total_kwh=round(projected, 4),
             is_projection=days_remaining > 0, days_remaining=days_remaining,
         )

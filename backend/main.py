@@ -1,13 +1,11 @@
-"""FastAPI process: simulation loop + JSON API (/api/*) + dashboard. Run from backend/: python main.py [--dev]"""
+"""FastAPI process: simulation loop + JSON API (/api/*). Run from backend/: python main.py [--dev]"""
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api import (
     routes_admin,
@@ -28,9 +26,6 @@ from app.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("vpp")
-
-DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dashboard")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,16 +65,10 @@ async def validation_error(_request, exc: RequestValidationError):
     return JSONResponse(status_code=422, content={"detail": errors})
 
 
-if os.path.isdir(DASHBOARD_DIR):
-    app.mount("/static", StaticFiles(directory=DASHBOARD_DIR), name="static")
-
-
 @app.get("/", include_in_schema=False)
 def root():
-    index = os.path.join(DASHBOARD_DIR, "index.html")
-    if os.path.exists(index):
-        return FileResponse(index)
-    return {"name": "VPP Simulator API", "docs": "/docs"}
+    """The operator panel is served by the web container under /admin; the API root only points to the docs."""
+    return RedirectResponse("/docs")
 
 
 @app.get("/health")

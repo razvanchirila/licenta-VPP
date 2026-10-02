@@ -22,7 +22,7 @@ class UserRepository(BaseRepository[UserModel]):
 
     async def get_all_with_houses(self) -> list[UserModel]:
         result = await self.session.execute(
-            select(UserModel).options(selectinload(UserModel.house)).order_by(UserModel.created_at)
+            select(UserModel).options(selectinload(UserModel.house)).order_by(UserModel.created_at, UserModel.username)
         )
         return list(result.scalars().all())
 

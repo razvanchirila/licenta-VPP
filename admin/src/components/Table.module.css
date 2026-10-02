@@ -1,0 +1,85 @@
+.wrap {
+  overflow-x: auto;
+  margin: 0 -4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.right {
+  text-align: right !important;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover,
+.selected {
+  background: var(--surface-2);
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+
+.dim td {
+  color: var(--text-3);
+}
+
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pillOk {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.pillErr {
+  background: var(--red-soft);
+  color: #ff8a8a;
+}
+
+.pillOff {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.pos {
+  color: var(--green);
+}
+
+.neg {
+  color: #ff8a8a;
+}

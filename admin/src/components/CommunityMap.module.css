@@ -1,0 +1,135 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.node {
+  cursor: pointer;
+  outline: none;
+}
+
+.card {
+  fill: var(--surface-2);
+  stroke: var(--border);
+  stroke-width: 1;
+  transition: stroke 0.2s, fill 0.2s;
+}
+
+.node:hover .card {
+  fill: var(--surface-3);
+  stroke: var(--border-strong);
+}
+
+.node:focus-visible .card {
+  stroke: var(--green);
+  stroke-width: 2;
+}
+
+.giving {
+  stroke: rgba(34, 197, 94, 0.45);
+}
+
+.name {
+  fill: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mode {
+  fill: var(--emerald);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.profit {
+  fill: var(--amber);
+}
+
+.net {
+  fill: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos {
+  fill: var(--green);
+  color: var(--green);
+}
+
+.neg {
+  fill: #ff8a8a;
+  color: #ff8a8a;
+}
+
+.small {
+  fill: var(--text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pvDot {
+  fill: var(--series-pv);
+}
+
+.loadDot {
+  fill: var(--series-load);
+}
+
+.divider {
+  stroke: var(--border);
+}
+
+.bus {
+  stroke: var(--border-strong);
+  stroke-width: 2;
+  stroke-dasharray: 1 6;
+  stroke-linecap: round;
+}
+
+.busLabel {
+  fill: var(--text-3);
+  font-size: 12px;
+}
+
+.flow {
+  fill: none;
+  stroke: var(--series-p2p);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2 10;
+  animation: flow 0.9s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.55));
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendFlow {
+  width: 22px;
+  border-top: 3px dotted var(--series-p2p);
+}

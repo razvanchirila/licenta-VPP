@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import HouseStepModel as S
@@ -83,13 +83,13 @@ async def period_totals(session: AsyncSession, house_id: int, start: datetime, e
 
 
 async def daily_totals(session: AsyncSession, house_id: int, first_day: date, last_day: date) -> list[dict]:
-    day = func.date(S.sim_timestamp)
+    day = cast(S.sim_timestamp, Date)
     start, _ = day_bounds(first_day)
     _, end = day_bounds(last_day)
     rows = (await session.execute(
         select(day.label("day"), *_totals_columns()).where(*_in_range(house_id, start, end)).group_by(day).order_by(day)
     )).all()
-    by_day = {str(r.day)[:10]: summarize(r) for r in rows}
+    by_day = {r.day.isoformat(): summarize(r) for r in rows}
     out = []
     for offset in range((last_day - first_day).days + 1):
         key = (first_day + timedelta(days=offset)).isoformat()
@@ -99,11 +99,12 @@ async def daily_totals(session: AsyncSession, house_id: int, first_day: date, la
 
 
 async def monthly_totals(session: AsyncSession, house_id: int, start: datetime, end: datetime) -> dict[str, dict]:
-    ym = func.strftime("%Y-%m", S.sim_timestamp)
+    year, month = extract("year", S.sim_timestamp), extract("month", S.sim_timestamp)
     rows = (await session.execute(
-        select(ym.label("ym"), *_totals_columns()).where(*_in_range(house_id, start, end)).group_by(ym).order_by(ym)
+        select(year.label("year"), month.label("month"), *_totals_columns())
+        .where(*_in_range(house_id, start, end)).group_by(year, month).order_by(year, month)
     )).all()
-    return {r.ym: summarize(r) for r in rows}
+    return {f"{int(r.year):04d}-{int(r.month):02d}": summarize(r) for r in rows}
 
 
 def chart_range(period: str, ref: date, steps_per_day: int) -> tuple[date, date, int]:
@@ -148,16 +149,16 @@ async def step_points(session: AsyncSession, house_id: int, start: datetime, end
 
 async def hourly_sources(session: AsyncSession, house_id: int, start: datetime, end: datetime) -> list[dict]:
     """Served load per hour by source, kWh; solar is the remainder."""
-    hour = func.strftime("%Y-%m-%dT%H", S.sim_timestamp)
+    day, hour = cast(S.sim_timestamp, Date), extract("hour", S.sim_timestamp)
     rows = (await session.execute(
-        select(hour.label("hour"), _kwh(S.load_kw - S.shed_kw).label("served"), _kwh(S.imp_kw).label("grid"),
-               _kwh(S.dis_kw).label("battery"), _kwh(S.p2p_in_kw).label("p2p"))
-        .where(*_in_range(house_id, start, end)).group_by(hour).order_by(hour)
+        select(day.label("day"), hour.label("hour"), _kwh(S.load_kw - S.shed_kw).label("served"),
+               _kwh(S.imp_kw).label("grid"), _kwh(S.dis_kw).label("battery"), _kwh(S.p2p_in_kw).label("p2p"))
+        .where(*_in_range(house_id, start, end)).group_by(day, hour).order_by(day, hour)
     )).all()
     out = []
     for r in rows:
         served, grid, batt, p2p = float(r.served), float(r.grid), float(r.battery), float(r.p2p)
-        out.append({"hour": int(r.hour[-2:]), "served": served, "grid": grid, "battery": batt, "p2p": p2p,
+        out.append({"hour": int(r.hour), "served": served, "grid": grid, "battery": batt, "p2p": p2p,
                     "solar": max(0.0, served - grid - batt - p2p)})
     return out
 

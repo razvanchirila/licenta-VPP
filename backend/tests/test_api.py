@@ -1,17 +1,16 @@
 """
-End-to-end tests of the HTTP API on a temporary SQLite database.
+End-to-end tests of the HTTP API on the PostgreSQL test database (TEST_DATABASE_URL, see conftest.py).
 The simulation loop is loaded but not started; steps are triggered by hand.
 """
 import asyncio
 import os
-import tempfile
 from datetime import timedelta
 
 import pytest
+from conftest import api_database_url, recreate_tables
 
-_TMP = tempfile.mkdtemp(prefix="vpp-test-")
 os.environ.update({
-    "DATABASE_URL": "sqlite+aiosqlite:///" + os.path.join(_TMP, "test.db").replace("\\", "/"),
+    "DATABASE_URL": api_database_url(),
     "JWT_SECRET_KEY": "test-secret-key-not-for-production",
     "SIM_AUTOSTART": "false",
     "SIM_START_DATE": "2025-06-01",
@@ -20,21 +19,23 @@ os.environ.update({
 })
 
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
-from app.db.database import close_db, get_session_context, init_db  # noqa: E402
+from app.db.database import close_db, get_session_context  # noqa: E402
 from app.db.init_data import seed_houses  # noqa: E402
 from app.services import settlement  # noqa: E402
 from app.services.auth import create_access_token  # noqa: E402
 from app.services.users import create_user  # noqa: E402
-from app.settings import BACKEND_DIR, _database_url  # noqa: E402
+from app.settings import settings  # noqa: E402
 from main import app  # noqa: E402
 
 PASSWORD = "parola123"
 
 
 async def _seed():
-    await init_db()
+    await recreate_tables()
     async with get_session_context() as session:
         await seed_houses(session)
         await create_user(session, "admin", PASSWORD, None, True)
@@ -79,14 +80,11 @@ def test_health_is_public(client):
     assert r.json()["simulation"]["n_houses"] == 10
 
 
-def test_dashboard_is_served_with_csp(client):
-    """The operator dashboard is static, same-origin, and forbids inline scripts via CSP."""
-    r = client.get("/")
-    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
-    assert "Content-Security-Policy" in r.text and "script-src 'self'" in r.text
-    assert "onclick=" not in r.text and "<script>" not in r.text
-    assert client.get("/static/app.js").status_code == 200
-    assert client.get("/static/styles.css").status_code == 200
+def test_root_redirects_to_docs(client):
+    """The API no longer serves a dashboard; the operator panel lives in the web container."""
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/docs"
+    assert client.get("/static/app.js").status_code == 404
 
 
 def test_login_rejects_bad_password(client):
@@ -310,6 +308,38 @@ def test_chart_periods_and_bad_date(client, user1):
     assert impact["monthly_savings"][-1]["current"] is True and len(impact["monthly_savings"]) == 6
 
 
+def test_stats_chart_groups_by_hour_day_and_week(client, user3):
+    """The same energy_logs grouped by hour, day and ISO week: the date grouping must work on every database."""
+    def chart(start):
+        r = client.get(f"/api/stats/chart?start_date={start}&end_date=2025-06-01", headers=user3)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    hourly, daily, weekly = chart("2025-06-01"), chart("2025-05-20"), chart("2025-04-01")
+    assert (hourly["granularity"], daily["granularity"], weekly["granularity"]) == ("hourly", "daily", "weekly")
+    assert hourly["data_points"][0]["timestamp"] == "2025-06-01T00:00:00"
+    assert [p["timestamp"] for p in daily["data_points"]] == ["2025-06-01T00:00:00"]
+    assert [p["timestamp"] for p in weekly["data_points"]] == ["2025-05-26T00:00:00"]     # Monday of that week
+    total = sum(p["value_kwh"] for p in hourly["data_points"])
+    assert total > 0
+    assert daily["data_points"][0]["value_kwh"] == pytest.approx(total)
+    assert weekly["data_points"][0]["value_kwh"] == pytest.approx(total)
+    impact = client.get("/api/me/energy/impact", headers=user3).json()
+    assert impact["monthly_savings"][-1]["has_data"] is True and impact["monthly_savings"][0]["has_data"] is False
+
+
+def test_house_ids_continue_after_the_seeded_ones(client):
+    async def next_house_id():
+        engine = create_async_engine(settings.database_url)
+        try:
+            async with engine.connect() as conn:
+                return (await conn.execute(text("SELECT nextval(pg_get_serial_sequence('houses', 'id'))"))).scalar()
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(next_house_id()) > 10
+
+
 def test_register_then_admin_assigns_house(client, admin):
     r = client.post("/api/auth/register", json={"username": "nou", "password": PASSWORD})
     assert r.status_code == 201
@@ -365,25 +395,20 @@ def test_websocket_requires_a_valid_token(client, user1):
         assert ws.receive_text() == "pong"
 
 
-# ---------------------------------------------------------------- settings
-
-def test_relative_sqlite_path_resolves_against_backend_dir(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./vpp.db")
-    assert _database_url() == "sqlite+aiosqlite:///" + (BACKEND_DIR / "vpp.db").resolve().as_posix()
-    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///data/x.db")
-    assert _database_url().endswith("/backend/data/x.db")
-
-
-def test_absolute_and_non_sqlite_urls_are_left_alone(monkeypatch):
-    for url in ("sqlite+aiosqlite:///C:/tmp/a.db", "sqlite+aiosqlite:////tmp/a.db", "sqlite+aiosqlite:///:memory:",
-                "postgresql+asyncpg://u:p@host/db"):
-        monkeypatch.setenv("DATABASE_URL", url)
-        assert _database_url() == url
-
-
 def test_reset_restores_initial_state(client, admin, user3):
     r = client.post("/api/sim/reset", headers=admin)
     assert r.status_code == 200 and r.json()["status"]["total_steps"] == 0
     assert client.get("/api/wallet/3", headers=user3).json()["balance_lei"] == 100.0
     assert client.get("/api/houses/3/battery", headers=user3).json()["soc_percent"] == 50.0
     assert client.get("/api/me/energy/today", headers=user3).json()["steps"] == 0
+
+
+def test_stats_comparison_uses_romanian_month_names(client, user3):
+    r = client.get("/api/stats/comparison", headers=user3)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    months = ("ianuarie", "februarie", "martie", "aprilie", "mai", "iunie",
+              "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie")
+    for key in ("current_month", "previous_month"):
+        name, year = body[key].split()
+        assert name in months and year.isdigit()

@@ -1,0 +1,33 @@
+.box {
+  min-width: 170px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(31, 31, 34, 0.96);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.title {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.row strong {
+  margin-left: auto;
+  color: var(--text);
+  font-weight: 500;
+}

@@ -1,5 +1,5 @@
 """
-Create user accounts in the SQLite database. Run from anywhere:
+Create user accounts in the database from DATABASE_URL (PostgreSQL). Run from anywhere:
 
     python backend/scripts/seed.py admin  <username> <password>          one admin (no house)
     python backend/scripts/seed.py user   <username> <password> <house>  one user for a house

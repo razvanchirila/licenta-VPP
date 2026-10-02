@@ -2,7 +2,6 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.settings import settings
@@ -18,20 +17,8 @@ _session_factory = None
 def get_engine():
     global _engine
     if _engine is None:
-        url = settings.database_url
-        kwargs = {}
-        if url.startswith("sqlite"):
-            kwargs["connect_args"] = {"timeout": 30}
-        _engine = create_async_engine(url, echo=False, **kwargs)
-        if url.startswith("sqlite"):
-            # SQLite ignores ON DELETE CASCADE unless foreign keys are switched on per connection
-            @event.listens_for(_engine.sync_engine, "connect")
-            def _sqlite_pragmas(dbapi_conn, _record):
-                cur = dbapi_conn.cursor()
-                cur.execute("PRAGMA foreign_keys=ON")
-                cur.execute("PRAGMA journal_mode=WAL")
-                cur.close()
-        logger.info("Database engine created for %s", url.split("://")[0])
+        _engine = create_async_engine(settings.database_url, echo=False, pool_pre_ping=True)
+        logger.info("Database engine created for %s", _engine.url.render_as_string(hide_password=True))
     return _engine
 
 

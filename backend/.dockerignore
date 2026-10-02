@@ -1,0 +1,11 @@
+.env
+.env.*
+**/__pycache__
+*.py[cod]
+data/raw
+tests
+.pytest_cache
+.hypothesis
+.ruff_cache
+Dockerfile
+.dockerignore

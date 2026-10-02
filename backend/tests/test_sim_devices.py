@@ -1,19 +1,18 @@
 """
 The live loop's load comes from the devices seeded from dispozitive.csv, its PV from the 2023 data and its
-prices from SIM_PRICE_YEAR (SIM_DATA=real). Same temporary-database setup as test_api.py; steps are triggered by hand.
+prices from SIM_PRICE_YEAR (SIM_DATA=real). Same test-database setup as test_api.py; steps are triggered by hand.
 """
 import asyncio
 import logging
 import os
-import tempfile
 from datetime import date
 
 import numpy as np
 import pytest
+from conftest import api_database_url, recreate_tables
 
-_TMP = tempfile.mkdtemp(prefix="vpp-test-")
 os.environ.update({
-    "DATABASE_URL": "sqlite+aiosqlite:///" + os.path.join(_TMP, "test.db").replace("\\", "/"),
+    "DATABASE_URL": api_database_url(),
     "JWT_SECRET_KEY": "test-secret-key-not-for-production",
     "SIM_AUTOSTART": "false",
     "SIM_START_DATE": "2025-06-01",
@@ -22,7 +21,7 @@ os.environ.update({
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.db.database import close_db, get_session_context, init_db  # noqa: E402
+from app.db.database import close_db, get_session_context  # noqa: E402
 from app.db.init_data import seed_houses  # noqa: E402
 from app.services import simulation_loop  # noqa: E402
 from app.services.simulation_loop import data_day, sim  # noqa: E402
@@ -38,7 +37,7 @@ DT_H = 0.25
 
 
 async def _seed():
-    await init_db()
+    await recreate_tables()
     async with get_session_context() as session:
         await seed_houses(session)
         await create_user(session, "admin", PASSWORD, None, True)
