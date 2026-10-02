@@ -10,8 +10,7 @@ class TemperatureCard extends StatelessWidget {
   final bool isInteractive;
   final VoidCallback? onTap;
   final bool useCelsius;
-  final VoidCallback? onUnitToggle;
-  final bool showUnitToggle;
+  final bool showUnit;
 
   const TemperatureCard({
     super.key,
@@ -22,8 +21,7 @@ class TemperatureCard extends StatelessWidget {
     this.isInteractive = false,
     this.onTap,
     this.useCelsius = true,
-    this.onUnitToggle,
-    this.showUnitToggle = false,
+    this.showUnit = false,
   });
 
   String get _displayTemperature {
@@ -38,7 +36,8 @@ class TemperatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: isInteractive ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -63,23 +62,24 @@ class TemperatureCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _displayTemperature,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _displayTemperature,
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      if (showUnitToggle) ...[
-                        const SizedBox(width: 2),
-                        GestureDetector(
-                          onTap: onUnitToggle,
-                          child: Container(
+                        if (showUnit) ...[
+                          const SizedBox(width: 2),
+                          Container(
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.1),
@@ -94,9 +94,9 @@ class TemperatureCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                   Text(
                     label,

@@ -17,7 +17,8 @@ class ClimateRoomSheet extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.all(20),
-      child: Column(
+      child: SingleChildScrollView(
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -32,7 +33,7 @@ class ClimateRoomSheet extends StatelessWidget {
               (room) => _RoomTile(room: room, isSelected: room == selectedRoom, onTap: () => onRoomSelected(room))),
           const SizedBox(height: 16),
         ],
-      ),
+      )),
     );
   }
 }

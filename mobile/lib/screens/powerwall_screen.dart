@@ -112,7 +112,7 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
   }
 
   Future<void> _loadWeather() async {
-    final weather = await weatherService.getWeatherBucharest();
+    final weather = await weatherService.getSiteWeather();
     if (!mounted) return;
     if (weather == null) {
       appState.setWeather(

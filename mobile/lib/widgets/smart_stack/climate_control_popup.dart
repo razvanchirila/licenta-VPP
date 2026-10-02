@@ -52,6 +52,7 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
   void _showRoomSelector() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => ClimateRoomSheet(
         selectedRoom: _selectedRoom,
@@ -90,7 +91,8 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
             border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
           ),
           padding: const EdgeInsets.all(24),
-          child: Column(
+          child: SingleChildScrollView(
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
@@ -115,7 +117,7 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
               _buildPowerButton(),
               const SizedBox(height: 20),
             ],
-          ),
+          )),
         ),
       ),
     );
@@ -130,7 +132,7 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
             onTap: _saveAndClose,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(13),
               decoration:
                   BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
               child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
@@ -149,7 +151,7 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
             onTap: _showScheduleSettings,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(13),
               decoration: BoxDecoration(
                 color:
                     _schedule.isEnabled ? _primaryColor.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.08),

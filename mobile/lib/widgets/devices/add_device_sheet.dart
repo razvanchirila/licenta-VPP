@@ -75,100 +75,104 @@ class _AddDeviceSheetState extends State<AddDeviceSheet> {
     return Container(
       margin: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.15),
       decoration: AppTheme.sheetDecoration(radius: 24),
-      child: SingleChildScrollView(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SheetHandle(margin: EdgeInsets.only(top: 12)),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.green.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
+      child: Material(
+        type: MaterialType.transparency,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetHandle(margin: EdgeInsets.only(top: 12)),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.green.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.add_rounded, color: AppColors.green, size: 24),
                     ),
-                    child: const Icon(Icons.add_rounded, color: AppColors.green, size: 24),
-                  ),
-                  const SizedBox(width: 14),
-                  Text(
-                    'Adaugă dispozitiv',
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _label('Nume'),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nameController,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: _inputDecoration('ex: Televizor dormitor'),
-                  ),
-                  const SizedBox(height: 20),
-                  _label('Consum (W)'),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _powerController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: _inputDecoration('ex: 150', suffix: 'W'),
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _critical,
-                    activeThumbColor: AppColors.red,
-                    title: Text('Dispozitiv critic', style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
-                    subtitle: Text('Nu poate fi oprit (nici de VPP la delestare)', style: AppText.hint),
-                    onChanged: (v) => setState(() => _critical = v),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _startOn,
-                    activeThumbColor: AppColors.green,
-                    title: Text('Pornit de la început', style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
-                    onChanged: (v) => setState(() => _startOn = v),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_error!, style: GoogleFonts.inter(color: AppColors.red, fontSize: 13)),
+                    const SizedBox(width: 14),
+                    Text(
+                      'Adaugă dispozitiv',
+                      style: GoogleFonts.inter(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+                    ),
                   ],
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _saving ? null : _addDevice,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Text('Adaugă dispozitiv', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
-            ),
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
-          ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _label('Nume'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: _inputDecoration('ex: Televizor dormitor'),
+                    ),
+                    const SizedBox(height: 20),
+                    _label('Consum (W)'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _powerController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: GoogleFonts.inter(color: Colors.white),
+                      decoration: _inputDecoration('ex: 150', suffix: 'W'),
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _critical,
+                      activeThumbColor: AppColors.red,
+                      title: Text('Dispozitiv critic', style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
+                      subtitle: Text('Nu poate fi oprit (nici de VPP la delestare)', style: AppText.hint),
+                      onChanged: (v) => setState(() => _critical = v),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _startOn,
+                      activeThumbColor: AppColors.green,
+                      title: Text('Pornit de la început', style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
+                      onChanged: (v) => setState(() => _startOn = v),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(_error!, style: GoogleFonts.inter(color: AppColors.red, fontSize: 13)),
+                    ],
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _addDevice,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text('Adaugă dispozitiv',
+                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
+            ],
+          ),
         ),
       ),
     );

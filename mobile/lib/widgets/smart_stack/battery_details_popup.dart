@@ -44,7 +44,8 @@ class BatteryDetailsPopup extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: Column(
+          child: SingleChildScrollView(
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
@@ -162,7 +163,7 @@ class BatteryDetailsPopup extends StatelessWidget {
               ),
               const SizedBox(height: 8),
             ],
-          ),
+          )),
         ),
       ),
     );

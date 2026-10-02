@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_interface/core/constants.dart';
 import 'package:flutter_interface/models/solar_forecast_data.dart';
 
 /// Cached to respect the 12 requests/hour rate limit of forecast.solar.
 class SolarForecastService {
-  static const double defaultLatitude = 46.5670;
-  static const double defaultLongitude = 26.9146;
+  static const double defaultLatitude = SiteLocation.latitude;
+  static const double defaultLongitude = SiteLocation.longitude;
   static const double defaultDeclination = 35.0; // tilt angle
   static const double defaultAzimuth = 180.0; // south facing
   static const double defaultKwp = 10.0;

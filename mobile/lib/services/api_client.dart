@@ -5,12 +5,17 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+const String _apiUrlDefine = String.fromEnvironment('API_URL');
+
 /// Base URL of the backend, overridable at build time:
 /// `flutter run --dart-define=API_URL=http://192.168.1.10:8000/api`.
-const String kApiBaseUrl = String.fromEnvironment(
-  'API_URL',
-  defaultValue: 'http://127.0.0.1:8000/api',
-);
+/// Without it the web build calls `/api` on the origin it was served from
+/// (nginx in the Docker image forwards it to the backend).
+String defaultApiBaseUrl() {
+  if (_apiUrlDefine.isNotEmpty) return _apiUrlDefine;
+  if (kIsWeb) return '${Uri.base.origin}/api';
+  return 'http://127.0.0.1:8000/api';
+}
 
 class ApiException implements Exception {
   /// HTTP status code, or 0 for network / timeout errors.
@@ -100,10 +105,11 @@ class ApiClient {
 
   ApiClient({
     required this.auth,
-    this.baseUrl = kApiBaseUrl,
+    String? baseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 10),
-  }) : _client = client ?? http.Client();
+  })  : baseUrl = baseUrl ?? defaultApiBaseUrl(),
+        _client = client ?? http.Client();
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
     final params = <String, String>{};

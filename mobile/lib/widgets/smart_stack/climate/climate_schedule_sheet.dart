@@ -50,7 +50,8 @@ class _ClimateScheduleSheetState extends State<ClimateScheduleSheet> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: const EdgeInsets.all(20),
-      child: Column(
+      child: SingleChildScrollView(
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
@@ -68,7 +69,7 @@ class _ClimateScheduleSheetState extends State<ClimateScheduleSheet> {
           _buildTimeSelector('Oprire', _schedule.offTime, false),
           const SizedBox(height: 24),
         ],
-      ),
+      )),
     );
   }
 

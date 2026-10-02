@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/constants.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/services/solar_forecast_service.dart';
 import 'package:flutter_interface/widgets/solar_forecast/forecast_cards.dart';
@@ -122,7 +123,7 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
     if (data == null || selected == null) {
       return const ForecastMessage(
         icon: Icons.wb_sunny_outlined,
-        message: 'Nu sunt disponibile predicții pentru această locație',
+        message: 'Nu sunt disponibile predicții pentru ${SiteLocation.name}',
       );
     }
 

@@ -7,6 +7,7 @@ Future<double?> showVppTransferDialog(BuildContext context, {required double? ra
   final value = await showDialog<double>(
     context: context,
     builder: (context) => AlertDialog(
+      scrollable: true,
       backgroundColor: AppColors.surface,
       title: Text('Transferă energie în rezerva VPP', style: GoogleFonts.inter(color: Colors.white, fontSize: 18)),
       content: Column(

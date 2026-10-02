@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/models/consumption_stats.dart';
+import 'package:flutter_interface/models/sim_prices.dart';
 
 const TextStyle statsCardTitle = TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white);
 
@@ -20,6 +21,10 @@ class StatisticsData {
 
 class StatisticsRules {
   StatisticsRules._();
+
+  /// The simulated day usually differs from the wall clock, so the chart is anchored to it.
+  static DateTime simulatedNow(SimPrices? prices, DateTime fallback) =>
+      prices?.current?.timestamp ?? DateTime.tryParse(prices?.date ?? '') ?? fallback;
 
   /// The backend clamps the window to the simulated data.
   static (DateTime, DateTime) chartRange(String period, DateTime now) {

@@ -122,11 +122,13 @@ void showTradeDetails(BuildContext context, Trade trade) {
 
   showModalBottomSheet(
     context: context,
+    isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => Container(
       padding: const EdgeInsets.all(24),
       decoration: AppTheme.sheetDecoration(),
-      child: Column(
+      child: SingleChildScrollView(
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -185,7 +187,7 @@ void showTradeDetails(BuildContext context, Trade trade) {
             ),
           ),
         ],
-      ),
+      )),
     ),
   );
 }

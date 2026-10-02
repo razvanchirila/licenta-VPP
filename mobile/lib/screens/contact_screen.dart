@@ -318,9 +318,11 @@ class ContactScreen extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: Theme(
-        data: ThemeData(dividerColor: Colors.transparent),
+      child: Material(
+        type: MaterialType.transparency,
         child: ExpansionTile(
+          shape: const Border(),
+          collapsedShape: const Border(),
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           iconColor: Colors.white.withValues(alpha: 0.5),

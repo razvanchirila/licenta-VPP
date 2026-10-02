@@ -193,13 +193,14 @@ class _PriceChartWidgetState extends State<PriceChartWidget> with TickerProvider
 
   Widget _buildSeriesSelector() {
     return Container(
-      height: 36,
+      height: 44,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: PriceSeries.values.map((s) {
           final isSelected = widget.series == s;
           return Expanded(
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => widget.onSeriesChanged(s),
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 2),

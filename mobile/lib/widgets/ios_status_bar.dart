@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+/// Desktop browsers only; phones get the real status bar (see AppShell).
 const bool kShowFakeIosStatusBar = true;
 
 class FakeIosStatusBar extends StatefulWidget {
@@ -25,7 +26,6 @@ class _FakeIosStatusBarState extends State<FakeIosStatusBar> {
   @override
   void initState() {
     super.initState();
-    if (!kShowFakeIosStatusBar) return;
     _updateTime();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _updateTime());
   }
@@ -45,8 +45,6 @@ class _FakeIosStatusBarState extends State<FakeIosStatusBar> {
 
   @override
   Widget build(BuildContext context) {
-    if (!kShowFakeIosStatusBar) return widget.child;
-
     return Column(
       children: [
         Container(

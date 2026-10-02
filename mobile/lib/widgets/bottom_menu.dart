@@ -135,7 +135,7 @@ class _OverlayBottomMenuState extends State<OverlayBottomMenu> with SingleTicker
                       onTap: _toggleMenu,
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 20),
                         child: Center(
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),

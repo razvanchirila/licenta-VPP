@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/screens/login_screen.dart';
 import 'package:flutter_interface/screens/powerwall_screen.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
-import 'package:flutter_interface/widgets/ios_status_bar.dart';
+import 'package:flutter_interface/widgets/app_shell.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -26,27 +25,13 @@ class VppSimulatorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'VPP Simulator',
+      title: 'VPP Comunitate',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const AuthGate(),
-      builder: (context, child) {
-        return FakeIosStatusBar(
-          backgroundColor: AppColors.deepBackground,
-          child: MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(
-                MediaQuery.of(context).textScaler.scale(1.0).clamp(0.8, 1.2),
-              ),
-            ),
-            child: child ?? const SizedBox.shrink(),
-          ),
-        );
-      },
+      builder: appBuilder,
     );
   }
 }

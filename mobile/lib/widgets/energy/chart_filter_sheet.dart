@@ -13,6 +13,7 @@ Future<void> showChartFilterSheet(
   var current = visibility;
   return showModalBottomSheet(
     context: context,
+    isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => StatefulBuilder(
       builder: (context, setSheetState) {
@@ -24,36 +25,38 @@ Future<void> showChartFilterSheet(
         return Container(
           padding: const EdgeInsets.all(20),
           decoration: AppTheme.sheetDecoration(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SheetHandle(),
-              const SizedBox(height: 20),
-              Text('Afișare grafice', style: AppText.sectionTitle),
-              const SizedBox(height: 16),
-              _FilterToggle(
-                series: EnergySeries.solar,
-                value: current.solar,
-                onChanged: (v) => update(current.copyWith(solar: v)),
-              ),
-              _FilterToggle(
-                series: EnergySeries.consumption,
-                value: current.consumption,
-                onChanged: (v) => update(current.copyWith(consumption: v)),
-              ),
-              _FilterToggle(
-                series: EnergySeries.battery,
-                value: current.battery,
-                onChanged: (v) => update(current.copyWith(battery: v)),
-              ),
-              _FilterToggle(
-                series: EnergySeries.grid,
-                value: current.grid,
-                onChanged: (v) => update(current.copyWith(grid: v)),
-              ),
-              const SizedBox(height: 20),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SheetHandle(),
+                const SizedBox(height: 20),
+                Text('Afișare grafice', style: AppText.sectionTitle),
+                const SizedBox(height: 16),
+                _FilterToggle(
+                  series: EnergySeries.solar,
+                  value: current.solar,
+                  onChanged: (v) => update(current.copyWith(solar: v)),
+                ),
+                _FilterToggle(
+                  series: EnergySeries.consumption,
+                  value: current.consumption,
+                  onChanged: (v) => update(current.copyWith(consumption: v)),
+                ),
+                _FilterToggle(
+                  series: EnergySeries.battery,
+                  value: current.battery,
+                  onChanged: (v) => update(current.copyWith(battery: v)),
+                ),
+                _FilterToggle(
+                  series: EnergySeries.grid,
+                  value: current.grid,
+                  onChanged: (v) => update(current.copyWith(grid: v)),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         );
       },

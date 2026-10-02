@@ -1,36 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="ro">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Centrala electrică virtuală a comunității: producția solară, bateria și schimbul de energie al casei tale.">
+  <meta name="theme-color" content="#0A0A0A">
 
-  <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="flutter_interface">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VPP">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>flutter_interface</title>
+  <title>VPP Comunitate</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body { margin: 0; height: 100%; background-color: #0A0A0A; }
+  </style>
+  <script>
+    // Flutter replaces the viewport meta at startup and drops viewport-fit=cover.
+    new MutationObserver(function () {
+      var meta = document.querySelector('meta[name="viewport"]');
+      if (meta && meta.content.indexOf('viewport-fit') < 0) {
+        meta.content += ', viewport-fit=cover';
+      }
+    }).observe(document.head, { childList: true });
+
+    window.vppSafeArea = function () {
+      var probe = document.getElementById('vpp-safe-area');
+      if (!probe) {
+        probe = document.createElement('div');
+        probe.id = 'vpp-safe-area';
+        probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;' +
+          'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+        document.documentElement.appendChild(probe);
+      }
+      var s = getComputedStyle(probe);
+      return [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].map(function (v) {
+        return parseFloat(v) || 0;
+      });
+    };
+
+    window.vppStandalone = function () {
+      return window.navigator.standalone === true ||
+        window.matchMedia('(display-mode: standalone)').matches;
+    };
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

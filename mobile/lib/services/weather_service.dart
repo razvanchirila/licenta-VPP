@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_interface/core/constants.dart';
 import 'package:flutter_interface/models/weather_data.dart';
 import 'package:http/http.dart' as http;
 
@@ -50,7 +51,7 @@ class WeatherService {
     }
   }
 
-  Future<WeatherData?> getWeatherBucharest() => getCurrentWeather('Bucharest');
+  Future<WeatherData?> getSiteWeather() => getCurrentWeather(SiteLocation.query);
 }
 
 final weatherService = WeatherService();

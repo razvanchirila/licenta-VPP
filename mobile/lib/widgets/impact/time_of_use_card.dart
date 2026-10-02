@@ -49,7 +49,7 @@ class _TimeOfUseCardState extends State<TimeOfUseCard> {
           ),
           const SizedBox(height: 24),
           SizedBox(
-            height: 140,
+            height: 150,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               crossAxisAlignment: CrossAxisAlignment.end,

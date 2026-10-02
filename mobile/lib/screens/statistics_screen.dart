@@ -3,6 +3,8 @@ import 'package:flutter_interface/core/async_value.dart';
 import 'package:flutter_interface/core/formatters.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/models/consumption_stats.dart';
+import 'package:flutter_interface/models/sim_prices.dart';
+import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
 import 'package:flutter_interface/widgets/error_state.dart';
 import 'package:flutter_interface/widgets/statistics/comparison_card.dart';
@@ -29,12 +31,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> with AsyncLoader<St
   }
 
   Future<void> _loadStatistics() => load(() async {
-        final range = StatisticsRules.chartRange(_period, DateTime.now());
         final results = await Future.wait<Object>([
           userApiService.getConsumptionSummary(period: _period),
           userApiService.getTopConsumers(period: _period, limit: 5),
           userApiService.getMonthlyComparison(),
-          userApiService.getStatsChart(startDate: formatApiDate(range.$1), endDate: formatApiDate(range.$2)),
+          _loadChart(_period),
         ]);
         return StatisticsData(
           summary: results[0] as ConsumptionSummary,
@@ -43,6 +44,17 @@ class _StatisticsScreenState extends State<StatisticsScreen> with AsyncLoader<St
           chart: results[3] as ChartData,
         );
       });
+
+  Future<ChartData> _loadChart(String period) async {
+    SimPrices? prices;
+    try {
+      prices = await userApiService.getSimPrices();
+    } on ApiException {
+      prices = null;
+    }
+    final range = StatisticsRules.chartRange(period, StatisticsRules.simulatedNow(prices, DateTime.now()));
+    return userApiService.getStatsChart(startDate: formatApiDate(range.$1), endDate: formatApiDate(range.$2));
+  }
 
   void _changePeriod(String period) {
     setState(() => _period = period);

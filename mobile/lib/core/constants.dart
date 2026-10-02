@@ -27,3 +27,14 @@ class AppConstants {
   static const double fontSizeXL = 18.0;
   static const double fontSizeXXL = 24.0;
 }
+
+/// Same site as the simulated PV (PVGIS series in the backend).
+class SiteLocation {
+  SiteLocation._();
+
+  static const String name = 'Bacău';
+  static const double latitude = 46.57;
+  static const double longitude = 26.91;
+
+  static String get query => '$latitude,$longitude';
+}

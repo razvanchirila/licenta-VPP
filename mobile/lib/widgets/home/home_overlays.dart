@@ -92,25 +92,28 @@ void showProfileMenu(BuildContext context,
     builder: (context) => Container(
       decoration: AppTheme.sheetDecoration(color: AppColors.surfaceMenu),
       padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SheetHandle(color: Colors.grey.shade600),
-          const SizedBox(height: 20),
-          ListTile(
-            leading: const Icon(Icons.person_rounded, color: Colors.white70),
-            title: Text(username, style: const TextStyle(color: Colors.white)),
-            subtitle: Text(houseName, style: const TextStyle(color: Colors.white54)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Deconectare', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              onLogout();
-            },
-          ),
-        ],
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SheetHandle(color: Colors.grey.shade600),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.person_rounded, color: Colors.white70),
+              title: Text(username, style: const TextStyle(color: Colors.white)),
+              subtitle: Text(houseName, style: const TextStyle(color: Colors.white54)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Deconectare', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                onLogout();
+              },
+            ),
+          ],
+        ),
       ),
     ),
   );
