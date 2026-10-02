@@ -1,0 +1,107 @@
+# Stiva de pe server, in /opt/vpp, cu secretele in /opt/vpp/.env (vezi .env.example).
+# Imaginile api si web vin din ghcr.io; TAG din .env alege versiunea (sha-ul commit-ului sau latest).
+# Singurul container cu porturi publice este caddy, care obtine certificatele HTTPS pentru DOMAIN si STAGING_DOMAIN
+# si ajunge la stiva de staging (docker-compose.staging.yml) prin reteaua comuna vpp-edge.
+name: vpp
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40"]
+    environment:
+      POSTGRES_USER: vpp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?lipseste din .env}
+      POSTGRES_DB: vpp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U vpp -d vpp"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: ghcr.io/razvanchirila/licenta-vpp-api:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vpp:${POSTGRES_PASSWORD}@db:5432/vpp
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?lipseste din .env}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      CORS_ORIGINS: https://${DOMAIN:?lipseste din .env}
+      SIM_CONTROLLER: ${SIM_CONTROLLER:-reguli}
+      SIM_TICK_SECONDS: ${SIM_TICK_SECONDS:-2}
+      SIM_DT_HOURS: ${SIM_DT_HOURS:-0.25}
+      SIM_SEED: ${SIM_SEED:-42}
+      SIM_START_DATE: ${SIM_START_DATE:-}
+      SIM_AUTOSTART: ${SIM_AUTOSTART:-true}
+      SIM_DATA: ${SIM_DATA:-real}
+      SIM_PRICE_YEAR: ${SIM_PRICE_YEAR:-2025}
+      INITIAL_WALLET_LEI: ${INITIAL_WALLET_LEI:-100}
+      OPERATOR_WALLET_LEI: ${OPERATOR_WALLET_LEI:-10000}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-123}
+    networks:
+      default:
+        aliases: [prod-api]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+
+  web:
+    image: ghcr.io/razvanchirila/licenta-vpp-web:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      default:
+        aliases: [prod-web]
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/admin/"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?lipseste din .env}
+      GOMEMLIMIT: 48MiB
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [default, edge]
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  edge:
+    name: vpp-edge
+    external: true
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

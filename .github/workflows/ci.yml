@@ -1,0 +1,296 @@
+name: CI
+
+# feature/* -> PR -> develop (deploy pe staging) -> PR -> main (deploy in productie).
+# Job-urile rapide ruleaza doar cand s-a schimbat zona lor; build-ul Docker doar pe drumul spre productie.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # pe main si develop o rulare inceputa nu e oprita, ca sa nu se intrerupa un deploy
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.backend == 'true' }}
+      mobile: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.mobile == 'true' }}
+      admin: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.admin == 'true' }}
+      code: >-
+        ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.backend == 'true'
+        || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.admin == 'true'
+        || steps.filter.outputs.stack == 'true' }}
+    steps:
+      - id: all
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: echo "run=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.all.outputs.run != 'true'
+      # la push se compara cu commit-ul de dinaintea push-ului, la pull request cu ramura tinta
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: steps.all.outputs.run != 'true'
+        with:
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          predicate-quantifier: every
+          filters: |
+            backend:
+              - "{backend/**,.github/workflows/ci.yml}"
+              - "!**/*.md"
+            mobile:
+              - "{mobile/**,.github/workflows/ci.yml}"
+              - "!**/*.md"
+            admin:
+              - "{admin/**,.github/workflows/ci.yml}"
+              - "!**/*.md"
+            stack:
+              - "{web/**,deploy/**,docker-compose*.yml,.github/**}"
+              - "!**/*.md"
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vpp
+          POSTGRES_PASSWORD: vpp
+          POSTGRES_DB: vpp
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U vpp -d vpp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://vpp:vpp@localhost:15432/vpp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check app vpp_core tests scripts main.py
+      - run: python -m pytest -q -rs --junitxml=test-results/junit.xml
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: backend-junit
+          path: backend/test-results/junit.xml
+          if-no-files-found: ignore
+
+  flutter:
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.3"
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter test
+      - run: flutter build web --release --no-wasm-dry-run
+
+  admin:
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # imaginile Docker: PR spre main, push pe main sau develop, saptamanal si la cerere; ruleaza si cand
+  # job-urile rapide au fost sarite (zona lor nu s-a schimbat), dar nu dupa un esec
+  docker:
+    needs: [changes, backend, flutter, admin]
+    if: >-
+      ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && (
+        github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'pull_request' && github.base_ref == 'main')
+        || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+        id: buildx
+      # expune ACTIONS_RUNTIME_TOKEN si URL-urile de cache pentru cache_from/cache_to type=gha din docker compose
+      - uses: crazy-max/ghaction-github-runtime@v3
+
+      - name: Build api + web
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+        run: docker compose -p vpp-ci -f docker-compose.yml -f .github/docker-compose.ci.yml build
+
+  publish:
+    needs: docker
+    if: >-
+      ${{ !failure() && !cancelled() && needs.docker.result == 'success' && github.event_name == 'push'
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/razvanchirila/licenta-vpp
+      # main -> latest (productie), develop -> develop (staging); sha-ul commit-ului in ambele cazuri
+      CHANNEL: ${{ github.ref == 'refs/heads/main' && 'latest' || 'develop' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push api
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}-api:${{ env.CHANNEL }}
+            ${{ env.IMAGE }}-api:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max,ignore-error=true
+
+      - name: Push web
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          build-contexts: |
+            mobile=mobile
+            admin=admin
+          build-args: WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}-web:${{ env.CHANNEL }}
+            ${{ env.IMAGE }}-web:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max,ignore-error=true
+
+  deploy:
+    needs: publish
+    if: ${{ !failure() && !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      url: ${{ github.ref == 'refs/heads/main' && 'https://vpp-licenta.switzerlandnorth.cloudapp.azure.com' || 'https://staging.51.107.88.91.nip.io' }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      TARGET: ${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
+      SITE_URL: ${{ github.ref == 'refs/heads/main' && 'https://vpp-licenta.switzerlandnorth.cloudapp.azure.com' || 'https://staging.51.107.88.91.nip.io' }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+    steps:
+      - name: Check secrets
+        id: check
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::notice::Deploy-ul automat nu e activat (lipsesc secretele DEPLOY_*); imaginile sunt doar publicate."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy
+        if: steps.check.outputs.enabled == 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "deploy $TARGET $GITHUB_SHA $GITHUB_ACTOR"
+
+      - name: Health check
+        if: steps.check.outputs.enabled == 'true'
+        run: |
+          for i in $(seq 1 30); do
+            health=$(curl -fsS --max-time 5 "$SITE_URL/health" || true)
+            api=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$SITE_URL/api/auth/me" || true)
+            if echo "$health" | grep -q '"status":"ok"' && [ "$api" = "401" ]; then
+              echo "ok dupa $i incercari"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "health: $health, /api/auth/me: $api"
+          exit 1
+
+      - name: Rollback
+        if: failure() && steps.check.outputs.enabled == 'true'
+        run: ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "rollback $TARGET" < /dev/null
+
+  # singurul check cerut de protectia ramurilor: pica daca vreun job a picat sau a fost anulat,
+  # iar job-urile sarite (zona lor nu s-a schimbat) conteaza ca reusite
+  ci-ok:
+    if: always()
+    needs: [changes, backend, flutter, admin, docker, publish, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null
