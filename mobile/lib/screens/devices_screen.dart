@@ -37,7 +37,10 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.inter(color: Colors.white)),
+        content: Semantics(
+            container: true,
+            identifier: 'snackbar',
+            child: Text(message, style: GoogleFonts.inter(color: Colors.white))),
         backgroundColor: isError ? AppColors.red : AppColors.green,
         behavior: SnackBarBehavior.floating,
       ),
@@ -116,6 +119,7 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
               actions: [
                 IconButton(
                   onPressed: _addDevice,
+                  tooltip: 'Adaugă dispozitiv',
                   icon: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(

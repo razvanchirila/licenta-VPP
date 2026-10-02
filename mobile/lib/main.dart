@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/screens/login_screen.dart';
 import 'package:flutter_interface/screens/powerwall_screen.dart';
@@ -9,6 +11,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Flutter web paints into a canvas; the semantics tree is what screen readers and
+  // browser automation see, so it is built from the start instead of on demand.
+  if (kIsWeb) SemanticsBinding.instance.ensureSemantics();
   await authState.load();
   // When the session is cleared (logout or 401) drop any pushed screens so
   // the login screen shown by AuthGate is actually visible.

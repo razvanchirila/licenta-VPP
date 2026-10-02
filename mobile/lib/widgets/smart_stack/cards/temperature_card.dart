@@ -100,7 +100,7 @@ class TemperatureCard extends StatelessWidget {
                   ),
                   Text(
                     label,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
                       color: Colors.white.withValues(alpha: 0.5),

@@ -93,6 +93,7 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
           Text('Participare la trading', style: AppText.sectionTitle),
           const SizedBox(height: 12),
           _ToggleCard(
+            id: 'trading-selling',
             title: 'Vânzare către vecini',
             subtitle: 'Permite vânzarea surplusului de energie către alte case',
             icon: Icons.sell,
@@ -101,6 +102,7 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
           ),
           const SizedBox(height: 12),
           _ToggleCard(
+            id: 'trading-buying',
             title: 'Cumpărare de la vecini',
             subtitle: 'Permite cumpărarea energiei de la alte case înainte de import din rețea',
             icon: Icons.shopping_cart,
@@ -135,18 +137,23 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _savePreferences,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _accent,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Semantics(
+              container: true,
+              identifier: 'trading-save',
+              label: 'Salvează preferințele',
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _savePreferences,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('Salvează preferințele',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black)),
               ),
-              child: _isSaving
-                  ? const SizedBox(
-                      height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text('Salvează preferințele',
-                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black)),
             ),
           ),
         ],
@@ -156,6 +163,7 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
 }
 
 class _ToggleCard extends StatelessWidget {
+  final String id;
   final String title;
   final String subtitle;
   final IconData icon;
@@ -163,6 +171,7 @@ class _ToggleCard extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   const _ToggleCard({
+    required this.id,
     required this.title,
     required this.subtitle,
     required this.icon,
@@ -195,7 +204,12 @@ class _ToggleCard extends StatelessWidget {
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged, activeThumbColor: accent),
+          Semantics(
+            container: true,
+            identifier: id,
+            label: title,
+            child: Switch(value: value, onChanged: onChanged, activeThumbColor: accent),
+          ),
         ],
       ),
     );
@@ -225,18 +239,24 @@ class _PriceModeSelector extends StatelessWidget {
   Widget _option(String value, String label) {
     final selected = mode == value;
     return Expanded(
-      child: GestureDetector(
-        onTap: () => onChanged(value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.tradingAccent : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.inter(color: selected ? Colors.black : Colors.white54, fontWeight: FontWeight.w500),
+      child: Semantics(
+        container: true,
+        identifier: 'trading-mode-$value',
+        button: true,
+        selected: selected,
+        child: GestureDetector(
+          onTap: () => onChanged(value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.tradingAccent : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: GoogleFonts.inter(color: selected ? Colors.black : Colors.white54, fontWeight: FontWeight.w500),
+              ),
             ),
           ),
         ),
@@ -265,18 +285,28 @@ class _DiscountSlider extends StatelessWidget {
               Flexible(
                 child: Text('Discount față de prețul rețelei', style: GoogleFonts.inter(color: Colors.white)),
               ),
-              Text('${value.toInt()}%',
-                  style: GoogleFonts.inter(color: AppColors.tradingAccent, fontWeight: FontWeight.w600, fontSize: 18)),
+              Semantics(
+                container: true,
+                identifier: 'trading-discount-value',
+                child: Text('${value.toInt()}%',
+                    style:
+                        GoogleFonts.inter(color: AppColors.tradingAccent, fontWeight: FontWeight.w600, fontSize: 18)),
+              ),
             ],
           ),
-          Slider(
-            value: value,
-            min: 0,
-            max: 50,
-            divisions: 50,
-            activeColor: AppColors.tradingAccent,
-            inactiveColor: Colors.white24,
-            onChanged: onChanged,
+          Semantics(
+            container: true,
+            identifier: 'trading-discount',
+            label: 'Discount față de prețul rețelei',
+            child: Slider(
+              value: value,
+              min: 0,
+              max: 50,
+              divisions: 50,
+              activeColor: AppColors.tradingAccent,
+              inactiveColor: Colors.white24,
+              onChanged: onChanged,
+            ),
           ),
           Text('Vecinii ar plăti ${100 - value.toInt()}% din prețul rețelei', style: AppText.muted),
         ],
@@ -301,24 +331,29 @@ class _FixedPriceInput extends StatelessWidget {
         children: [
           Text('Preț fix per kWh', style: GoogleFonts.inter(color: Colors.white)),
           const SizedBox(height: 12),
-          TextField(
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: GoogleFonts.inter(color: Colors.white),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-              DecimalTextInputFormatter(),
-            ],
-            decoration: InputDecoration(
-              hintText: 'Ex: 0.80',
-              hintStyle: GoogleFonts.inter(color: Colors.white38),
-              suffixText: 'lei/kWh',
-              suffixStyle: GoogleFonts.inter(color: Colors.white54),
-              filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+          Semantics(
+            container: true,
+            identifier: 'trading-fixed-price',
+            label: 'Preț fix per kWh',
+            child: TextField(
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: GoogleFonts.inter(color: Colors.white),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                DecimalTextInputFormatter(),
+              ],
+              decoration: InputDecoration(
+                hintText: 'Ex: 0.80',
+                hintStyle: GoogleFonts.inter(color: Colors.white38),
+                suffixText: 'lei/kWh',
+                suffixStyle: GoogleFonts.inter(color: Colors.white54),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+              ),
+              controller: controller,
+              onChanged: onChanged,
             ),
-            controller: controller,
-            onChanged: onChanged,
           ),
           const SizedBox(height: 8),
           Text(

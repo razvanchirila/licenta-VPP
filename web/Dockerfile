@@ -11,7 +11,8 @@ RUN flutter pub get
 COPY --from=mobile . .
 ARG API_URL=
 ARG WEATHER_API_KEY=
-RUN flutter build web --release --no-wasm-dry-run \
+# --wasm also builds the JavaScript version; flutter_bootstrap.js picks one per browser
+RUN flutter build web --release --wasm \
     --dart-define=API_URL=${API_URL} \
     --dart-define=WEATHER_API_KEY=${WEATHER_API_KEY}
 

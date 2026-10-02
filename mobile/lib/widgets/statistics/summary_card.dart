@@ -27,7 +27,11 @@ class ConsumptionSummaryCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _stat('Total', formatKwh(summary.totalKwh, decimals: 2), Icons.bolt, AppColors.blue),
+                child: Semantics(
+                  container: true,
+                  identifier: 'stats-total',
+                  child: _stat('Total', formatKwh(summary.totalKwh, decimals: 2), Icons.bolt, AppColors.blue),
+                ),
               ),
               Expanded(
                 child: _stat(

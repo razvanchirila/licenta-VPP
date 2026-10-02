@@ -75,7 +75,7 @@ class _ImpactScreenState extends State<ImpactScreen> with AsyncLoader<EnergyImpa
               subtitle: 'Distribuția energiei consumate în ziua simulată ${impact.date}',
             ),
             const SizedBox(height: 16),
-            EnergySourcesCard(impact: impact),
+            Semantics(container: true, identifier: 'impact-sources', child: EnergySourcesCard(impact: impact)),
             const SizedBox(height: 24),
             const SectionHeader(
               icon: Icons.access_time_rounded,
@@ -83,7 +83,7 @@ class _ImpactScreenState extends State<ImpactScreen> with AsyncLoader<EnergyImpa
               subtitle: 'Energia folosită pe intervale orare',
             ),
             const SizedBox(height: 16),
-            TimeOfUseCard(impact: impact),
+            Semantics(container: true, identifier: 'impact-time-of-use', child: TimeOfUseCard(impact: impact)),
             const SizedBox(height: 24),
             const SectionHeader(
               icon: Icons.savings_rounded,
@@ -91,7 +91,11 @@ class _ImpactScreenState extends State<ImpactScreen> with AsyncLoader<EnergyImpa
               subtitle: 'Față de un consum acoperit integral din rețea',
             ),
             const SizedBox(height: 16),
-            MonthlySavingsCard(months: impact.monthlySavings),
+            Semantics(
+              container: true,
+              identifier: 'impact-savings',
+              child: MonthlySavingsCard(months: impact.monthlySavings),
+            ),
             const SizedBox(height: 32),
           ],
         ),

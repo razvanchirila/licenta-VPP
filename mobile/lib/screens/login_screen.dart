@@ -101,80 +101,98 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                         ),
                         const SizedBox(height: 32),
-                        TextFormField(
-                          controller: _usernameController,
-                          autofillHints: const [AutofillHints.username],
-                          decoration: InputDecoration(
-                            labelText: 'Utilizator',
-                            prefixIcon: const Icon(Icons.person_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        Semantics(
+                          container: true,
+                          identifier: 'login-username',
+                          child: TextFormField(
+                            controller: _usernameController,
+                            autofillHints: const [AutofillHints.username],
+                            decoration: InputDecoration(
+                              labelText: 'Utilizator',
+                              prefixIcon: const Icon(Icons.person_outline),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Introdu numele de utilizator';
+                              }
+                              if (_isRegisterMode && value.trim().length < 3) {
+                                return 'Minim 3 caractere';
+                              }
+                              return null;
+                            },
                           ),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Introdu numele de utilizator';
-                            }
-                            if (_isRegisterMode && value.trim().length < 3) {
-                              return 'Minim 3 caractere';
-                            }
-                            return null;
-                          },
                         ),
                         const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          autofillHints: const [AutofillHints.password],
-                          onFieldSubmitted: (_) => _isLoading ? null : _submit(),
-                          decoration: InputDecoration(
-                            labelText: 'Parolă',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                        Semantics(
+                          container: true,
+                          identifier: 'login-password',
+                          child: TextFormField(
+                            controller: _passwordController,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.password],
+                            onFieldSubmitted: (_) => _isLoading ? null : _submit(),
+                            decoration: InputDecoration(
+                              labelText: 'Parolă',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Introdu parola';
+                              }
+                              if (_isRegisterMode && value.length < 6) {
+                                return 'Parola trebuie să aibă cel puțin 6 caractere';
+                              }
+                              return null;
+                            },
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Introdu parola';
-                            }
-                            if (_isRegisterMode && value.length < 6) {
-                              return 'Parola trebuie să aibă cel puțin 6 caractere';
-                            }
-                            return null;
-                          },
                         ),
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 16),
-                          Text(
-                            _errorMessage!,
-                            style: TextStyle(color: Colors.red.shade700),
-                            textAlign: TextAlign.center,
+                          Semantics(
+                            container: true,
+                            liveRegion: true,
+                            identifier: 'login-error',
+                            child: Text(
+                              _errorMessage!,
+                              style: TextStyle(color: Colors.red.shade700),
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ],
                         const SizedBox(height: 24),
                         SizedBox(
                           width: double.infinity,
                           height: 48,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green.shade700,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                          child: Semantics(
+                            container: true,
+                            identifier: 'login-submit',
+                            label: _isRegisterMode ? 'Înregistrare' : 'Autentificare',
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _submit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(_isRegisterMode ? 'Înregistrare' : 'Autentificare'),
                             ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : Text(_isRegisterMode ? 'Înregistrare' : 'Autentificare'),
                           ),
                         ),
                         const SizedBox(height: 16),

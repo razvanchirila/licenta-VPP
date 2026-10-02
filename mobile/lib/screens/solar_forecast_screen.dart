@@ -102,7 +102,7 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
           ),
         ],
       ),
-      body: _buildBody(),
+      body: SafeArea(top: false, child: _buildBody()),
     );
   }
 

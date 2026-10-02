@@ -31,8 +31,11 @@ class HouseSection extends StatefulWidget {
   State<HouseSection> createState() => _HouseSectionState();
 }
 
-class _HouseSectionState extends State<HouseSection> with TickerProviderStateMixin {
-  late AnimationController _flowController;
+class _HouseSectionState extends State<HouseSection> with SingleTickerProviderStateMixin {
+  late final AnimationController _flowController;
+  late final AppLifecycleListener _lifecycle;
+  late List<FlowTrack> _tracks;
+  bool _appVisible = true;
 
   static const double originalWidth = 1073.0;
   static const double originalHeight = 715.0;
@@ -51,13 +54,44 @@ class _HouseSectionState extends State<HouseSection> with TickerProviderStateMix
     _flowController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
-    )..repeat();
+    );
+    _lifecycle = AppLifecycleListener(onStateChange: (state) {
+      _appVisible = state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
+      _syncTicker();
+    });
+    _tracks = _flowTracks();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(HouseSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _tracks = _flowTracks();
+    _syncTicker();
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _flowController.dispose();
     super.dispose();
+  }
+
+  List<FlowTrack> _flowTracks() => energyFlowTracks(
+        solarPower: widget.solarPower,
+        homePower: widget.homePower,
+        batteryPower: widget.batteryPower,
+        gridPower: widget.gridPower,
+      );
+
+  /// The dashes only move while something flows and the app is on screen.
+  void _syncTicker() {
+    final run = _appVisible && _tracks.isNotEmpty;
+    if (run && !_flowController.isAnimating) {
+      _flowController.repeat();
+    } else if (!run && _flowController.isAnimating) {
+      _flowController.stop();
+    }
   }
 
   Offset _convertPoint(Offset origPoint, Size imageSize, Offset imageOffset) {
@@ -108,123 +142,128 @@ class _HouseSectionState extends State<HouseSection> with TickerProviderStateMix
 
         final gridLabelY = gridTarget.dy + 20 + availableHeight * 0.10;
 
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            CustomPaint(
-              size: Size(availableWidth, availableHeight),
-              painter: StaticLinesPainter(
-                solarStart: Offset(solarTarget.dx, topLabelsY + 40),
-                solarEnd: solarTarget,
-                homeStart: Offset(homeTarget.dx, topLabelsY + 40),
-                homeEnd: homeTarget,
-                gridStart: gridTarget,
-                gridEnd: Offset(gridTarget.dx, gridLabelY - 5),
-                batteryStart: batteryLineStart,
-                batteryEnd: Offset(batteryLineStart.dx, batteryLabelY - 5),
-                batteryTop: batteryTop,
-                batteryBottom: batteryBottom,
-                batteryPercentage: widget.powerwallPercentage,
-                solarPower: widget.solarPower,
-                homePower: widget.homePower,
-                gridPower: widget.gridPower,
-                batteryPower: widget.batteryPower,
-                drawBattery: false,
+        return RepaintBoundary(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CustomPaint(
+                size: Size(availableWidth, availableHeight),
+                painter: StaticLinesPainter(
+                  solarStart: Offset(solarTarget.dx, topLabelsY + 40),
+                  solarEnd: solarTarget,
+                  homeStart: Offset(homeTarget.dx, topLabelsY + 40),
+                  homeEnd: homeTarget,
+                  gridStart: gridTarget,
+                  gridEnd: Offset(gridTarget.dx, gridLabelY - 5),
+                  batteryStart: batteryLineStart,
+                  batteryEnd: Offset(batteryLineStart.dx, batteryLabelY - 5),
+                  batteryTop: batteryTop,
+                  batteryBottom: batteryBottom,
+                  batteryPercentage: widget.powerwallPercentage,
+                  solarPower: widget.solarPower,
+                  homePower: widget.homePower,
+                  gridPower: widget.gridPower,
+                  batteryPower: widget.batteryPower,
+                  drawBattery: false,
+                ),
               ),
-            ),
-            Positioned(
-              left: imageOffsetX - imageWidth * 0.2,
-              top: imageOffsetY + imageHeight * 0.85,
-              child: Container(
-                width: imageWidth * 1.4,
-                height: imageHeight * 0.35,
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: Alignment.topCenter,
-                    radius: 0.8,
-                    colors: [
-                      const Color(0xFF2A2A2A).withValues(alpha: 0.25),
-                      const Color(0xFF1F1F1F).withValues(alpha: 0.15),
-                      const Color(0xFF151515).withValues(alpha: 0.08),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.3, 0.6, 1.0],
+              Positioned(
+                left: imageOffsetX - imageWidth * 0.2,
+                top: imageOffsetY + imageHeight * 0.85,
+                child: Container(
+                  width: imageWidth * 1.4,
+                  height: imageHeight * 0.35,
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.topCenter,
+                      radius: 0.8,
+                      colors: [
+                        const Color(0xFF2A2A2A).withValues(alpha: 0.25),
+                        const Color(0xFF1F1F1F).withValues(alpha: 0.15),
+                        const Color(0xFF151515).withValues(alpha: 0.08),
+                        Colors.transparent,
+                      ],
+                      stops: const [0.0, 0.3, 0.6, 1.0],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              left: imageOffsetX,
-              top: imageOffsetY,
-              child: SizedBox(
-                width: imageWidth,
-                height: imageHeight,
-                child: Stack(
-                  children: [
-                    Image.asset(
-                      widget.houseImage,
-                      width: imageWidth,
-                      height: imageHeight,
-                      fit: BoxFit.contain,
-                    ),
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: EnergyFlowPainter(
-                          animation: _flowController,
-                          solarPower: widget.solarPower,
-                          homePower: widget.homePower,
-                          batteryPower: widget.batteryPower,
-                          gridPower: widget.gridPower,
+              Positioned(
+                left: imageOffsetX,
+                top: imageOffsetY,
+                child: SizedBox(
+                  width: imageWidth,
+                  height: imageHeight,
+                  child: Stack(
+                    children: [
+                      Image.asset(
+                        widget.houseImage,
+                        width: imageWidth,
+                        height: imageHeight,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                      Positioned.fill(
+                        child: CustomPaint(painter: EnergyFlowLinesPainter(tracks: _tracks)),
+                      ),
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: CustomPaint(
+                            painter: EnergyFlowPainter(animation: _flowController, tracks: _tracks),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            CustomPaint(
-              size: Size(availableWidth, availableHeight),
-              painter: BatteryBarPainter(
-                batteryTop: batteryTop,
-                batteryBottom: batteryBottom,
-                batteryPercentage: widget.powerwallPercentage,
+              CustomPaint(
+                size: Size(availableWidth, availableHeight),
+                painter: BatteryBarPainter(
+                  batteryTop: batteryTop,
+                  batteryBottom: batteryBottom,
+                  batteryPercentage: widget.powerwallPercentage,
+                ),
               ),
-            ),
-            Positioned(
-              left: solarTarget.dx - 35,
-              top: topLabelsY,
-              child: TopIndicator(
-                value: widget.solarPower,
-                label: 'SOLAR',
-                valueColor: AppColors.amber,
+              Positioned(
+                left: solarTarget.dx - 35,
+                top: topLabelsY,
+                child: TopIndicator(
+                  value: widget.solarPower,
+                  label: 'SOLAR',
+                  valueColor: AppColors.amber,
+                  semanticsId: 'home-solar',
+                ),
               ),
-            ),
-            Positioned(
-              left: homeTarget.dx - 35,
-              top: topLabelsY,
-              child: TopIndicator(
-                value: widget.homePower,
-                label: 'HOME',
-                valueColor: Colors.white,
+              Positioned(
+                left: homeTarget.dx - 35,
+                top: topLabelsY,
+                child: TopIndicator(
+                  value: widget.homePower,
+                  label: 'HOME',
+                  valueColor: Colors.white,
+                  semanticsId: 'home-load',
+                ),
               ),
-            ),
-            Positioned(
-              left: batteryLineStart.dx - 50,
-              top: batteryLabelY,
-              child: BatteryIndicator(
-                power: widget.batteryPower,
-                percentage: widget.powerwallPercentage,
+              Positioned(
+                left: batteryLineStart.dx - 50,
+                top: batteryLabelY,
+                child: BatteryIndicator(
+                  power: widget.batteryPower,
+                  percentage: widget.powerwallPercentage,
+                ),
               ),
-            ),
-            Positioned(
-              left: gridTarget.dx - 30,
-              top: gridLabelY,
-              child: BottomIndicator(
-                value: widget.gridPower,
-                label: 'GRID',
+              Positioned(
+                left: gridTarget.dx - 30,
+                top: gridLabelY,
+                child: BottomIndicator(
+                  value: widget.gridPower,
+                  label: 'GRID',
+                  semanticsId: 'home-grid',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );

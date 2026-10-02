@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_interface/state/app_state.dart';
@@ -82,43 +81,40 @@ class _ClimateControlPopupState extends State<ClimateControlPopup> {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _glassColor.withValues(alpha: 0.92),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(3))),
-              const SizedBox(height: 20),
-              _buildHeader(),
-              const SizedBox(height: 8),
-              _buildRoomSelector(),
-              const SizedBox(height: 28),
-              ArcSlider(
-                  minValue: 16,
-                  maxValue: 32,
-                  currentValue: _temperature,
-                  size: 200,
-                  onChanged: (value) => setState(() => _temperature = value)),
-              const SizedBox(height: 24),
-              _buildModeSection(),
-              const SizedBox(height: 28),
-              _buildPowerButton(),
-              const SizedBox(height: 20),
-            ],
-          )),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _glassColor.withValues(alpha: 0.92),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
         ),
+        padding: AppTheme.sheetPadding(context, 24),
+        child: SingleChildScrollView(
+            child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+                width: 40,
+                height: 5,
+                decoration:
+                    BoxDecoration(color: Colors.white.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(3))),
+            const SizedBox(height: 20),
+            _buildHeader(),
+            const SizedBox(height: 8),
+            _buildRoomSelector(),
+            const SizedBox(height: 28),
+            ArcSlider(
+                minValue: 16,
+                maxValue: 32,
+                currentValue: _temperature,
+                size: 200,
+                onChanged: (value) => setState(() => _temperature = value)),
+            const SizedBox(height: 24),
+            _buildModeSection(),
+            const SizedBox(height: 28),
+            _buildPowerButton(),
+            const SizedBox(height: 20),
+          ],
+        )),
       ),
     );
   }

@@ -55,9 +55,13 @@ class BackupReserveCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.green.withValues(alpha: 0.3), width: 1),
                 ),
-                child: Text(
-                  hasBattery ? '${value.round()}%' : '--',
-                  style: GoogleFonts.inter(color: AppColors.green, fontSize: 14, fontWeight: FontWeight.w700),
+                child: Semantics(
+                  container: true,
+                  identifier: 'settings-reserve-value',
+                  child: Text(
+                    hasBattery ? '${value.round()}%' : '--',
+                    style: GoogleFonts.inter(color: AppColors.green, fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ],
@@ -73,14 +77,19 @@ class BackupReserveCard extends StatelessWidget {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12, elevation: 4),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 24),
             ),
-            child: Slider(
-              value: value.clamp(0, max),
-              min: 0,
-              max: max,
-              divisions: 12,
-              onChanged: enabled ? onChanged : null,
-              onChangeStart: onChangeStart,
-              onChangeEnd: onChangeEnd,
+            child: Semantics(
+              container: true,
+              identifier: 'settings-reserve-slider',
+              label: 'Rezervă Backup',
+              child: Slider(
+                value: value.clamp(0, max),
+                min: 0,
+                max: max,
+                divisions: 12,
+                onChanged: enabled ? onChanged : null,
+                onChangeStart: onChangeStart,
+                onChangeEnd: onChangeEnd,
+              ),
             ),
           ),
           Padding(

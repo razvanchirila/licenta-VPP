@@ -12,23 +12,27 @@ class TopConsumersCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SurfaceCard(
-      bordered: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Top consumatori', style: statsCardTitle),
-          const SizedBox(height: 16),
-          if (top.devices.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: Text('Nu există date de consum', style: TextStyle(color: AppColors.textSecondary)),
-              ),
-            )
-          else
-            for (var i = 0; i < top.devices.length; i++) _ConsumerRow(device: top.devices[i], rank: i + 1),
-        ],
+    return Semantics(
+      container: true,
+      identifier: 'stats-top-consumers',
+      child: SurfaceCard(
+        bordered: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Top consumatori', style: statsCardTitle),
+            const SizedBox(height: 16),
+            if (top.devices.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('Nu există date de consum', style: TextStyle(color: AppColors.textSecondary)),
+                ),
+              )
+            else
+              for (var i = 0; i < top.devices.length; i++) _ConsumerRow(device: top.devices[i], rank: i + 1),
+          ],
+        ),
       ),
     );
   }

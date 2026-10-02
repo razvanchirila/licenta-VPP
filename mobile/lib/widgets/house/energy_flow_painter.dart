@@ -1,85 +1,109 @@
 import 'dart:math' as math;
+import 'dart:ui' show PathMetric;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_interface/core/energy_flow.dart';
 import 'package:flutter_interface/core/theme.dart';
 
-class EnergyFlowPainter extends CustomPainter {
-  final Animation<double> animation;
-  final double solarPower;
-  final double homePower;
+/// One animated flow: a polyline in pixels of the original 1073x715 image and its colour.
+typedef FlowTrack = ({List<List<double>> points, Color color});
 
-  /// Puterea bateriei: pozitiv = încărcare, negativ = descărcare
-  final double batteryPower;
+// Coordonate în PIXELI din imaginea originală 1073x715
+const List<List<double>> _solarToInverterPx = [
+  [814, 394],
+  [839, 426],
+  [824, 459],
+  [824, 507],
+];
 
-  /// Puterea grid: pozitiv = import, negativ = export
-  final double gridPower;
+const List<List<double>> _inverterToBatteryPx = [
+  [795, 605],
+  [758, 610],
+  [711, 616],
+];
 
-  // Thresholds below which no arrow is drawn
-  static const double _minSolarPower = FlowThresholds.arrowKw;
-  static const double _minHomePower = FlowThresholds.arrowKw;
-  static const double _minBatteryPower = FlowThresholds.arrowKw;
-  static const double _minGridPower = FlowThresholds.gridKw;
+const List<List<double>> _batteryToInverterPx = [
+  [711, 616],
+  [758, 610],
+  [795, 605],
+];
 
-  EnergyFlowPainter({
-    required this.animation,
-    required this.solarPower,
-    required this.homePower,
-    required this.batteryPower,
-    required this.gridPower,
-  }) : super(repaint: animation);
+const List<List<double>> _inverterToHomePx = [
+  [857, 552],
+  [887, 549],
+  [928, 543],
+];
 
-  static const double originalWidth = 1073.0;
-  static const double originalHeight = 715.0;
-  static const double aspectRatio = originalWidth / originalHeight;
+const List<List<double>> _inverterToGridPx = [
+  [824, 609],
+  [822, 654],
+  [824, 664],
+  [829, 669],
+  [835, 671],
+  [866, 677],
+  [956, 690],
+];
 
-  // Coordonate în PIXELI din imaginea originală 1073x715
-  static const List<List<double>> solarToInverterPathPx = [
-    [814, 394],
-    [839, 426],
-    [824, 459],
-    [824, 507],
+const List<List<double>> _gridToInverterPx = [
+  [956, 690],
+  [866, 677],
+  [835, 671],
+  [829, 669],
+  [824, 664],
+  [822, 654],
+  [824, 609],
+];
+
+/// The flows drawn for these powers (kW), in paint order; empty when the house is idle.
+/// Battery: positive = charging. Grid: positive = import.
+List<FlowTrack> energyFlowTracks({
+  required double solarPower,
+  required double homePower,
+  required double batteryPower,
+  required double gridPower,
+}) {
+  return [
+    if (solarPower > FlowThresholds.arrowKw) (points: _solarToInverterPx, color: AppColors.amber),
+    if (batteryPower > FlowThresholds.arrowKw)
+      (points: _inverterToBatteryPx, color: AppColors.emerald)
+    else if (batteryPower < -FlowThresholds.arrowKw)
+      (points: _batteryToInverterPx, color: AppColors.red),
+    if (homePower > FlowThresholds.arrowKw) (points: _inverterToHomePx, color: AppColors.green),
+    if (gridPower > FlowThresholds.gridKw)
+      (points: _gridToInverterPx, color: AppColors.red)
+    else if (gridPower < -FlowThresholds.gridKw)
+      (points: _inverterToGridPx, color: AppColors.emerald),
   ];
+}
 
-  static const List<List<double>> inverterToBatteryPathPx = [
-    [795, 605],
-    [758, 610],
-    [711, 616],
-  ];
+const double _originalWidth = 1073.0;
+const double _originalHeight = 715.0;
+const double _dashLength = 12.0;
+const double _gapLength = 20.0;
 
-  static const List<List<double>> batteryToInverterPathPx = [
-    [711, 616],
-    [758, 610],
-    [795, 605],
-  ];
+/// Paths and their metrics for the current canvas size, built once instead of on every frame.
+class _FlowGeometry {
+  static Size? _size;
+  static final Map<List<List<double>>, (Path, PathMetric)> _paths = {};
 
-  static const List<List<double>> inverterToHomePathPx = [
-    [857, 552],
-    [887, 549],
-    [928, 543],
-  ];
+  static (Path, PathMetric) of(List<List<double>> pointsPx, Size size) {
+    if (size != _size) {
+      _paths.clear();
+      _size = size;
+    }
+    return _paths.putIfAbsent(pointsPx, () {
+      final points = pointsPx.map((p) => _convertPoint(p[0], p[1], size)).toList();
+      final path = Path()..moveTo(points[0].dx, points[0].dy);
+      for (final p in points.skip(1)) {
+        path.lineTo(p.dx, p.dy);
+      }
+      return (path, path.computeMetrics().first);
+    });
+  }
 
-  static const List<List<double>> inverterToGridPathPx = [
-    [824, 609],
-    [822, 654],
-    [824, 664],
-    [829, 669],
-    [835, 671],
-    [866, 677],
-    [956, 690],
-  ];
-
-  static const List<List<double>> gridToInverterPathPx = [
-    [956, 690],
-    [866, 677],
-    [835, 671],
-    [829, 669],
-    [824, 664],
-    [822, 654],
-    [824, 609],
-  ];
-
-  Offset _convertPoint(double origX, double origY, Size containerSize) {
+  static Offset _convertPoint(double origX, double origY, Size containerSize) {
+    const aspectRatio = _originalWidth / _originalHeight;
     double imageWidth, imageHeight;
     double offsetX = 0, offsetY = 0;
 
@@ -93,185 +117,85 @@ class EnergyFlowPainter extends CustomPainter {
       offsetY = (containerSize.height - imageHeight) / 2;
     }
 
-    final scaleX = imageWidth / originalWidth;
-    final scaleY = imageHeight / originalHeight;
-
     return Offset(
-      offsetX + origX * scaleX,
-      offsetY + origY * scaleY,
+      offsetX + origX * imageWidth / _originalWidth,
+      offsetY + origY * imageHeight / _originalHeight,
     );
   }
+}
+
+Paint _stroke(Color color, double width, {double blur = 0, StrokeCap cap = StrokeCap.round}) {
+  final paint = Paint()
+    ..color = color
+    ..strokeWidth = width
+    ..style = PaintingStyle.stroke
+    ..strokeCap = cap;
+  if (blur > 0) paint.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+  return paint;
+}
+
+/// The still part of each flow (soft glow and thin base line); repaints only when the set of flows changes.
+class EnergyFlowLinesPainter extends CustomPainter {
+  final List<FlowTrack> tracks;
+
+  EnergyFlowLinesPainter({required this.tracks});
+
+  static final Map<Color, (Paint, Paint)> _paints = {};
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (solarPower > _minSolarPower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        solarToInverterPathPx,
-        AppColors.amber,
-        animation.value,
-        solarPower,
-        reverseAnimation: true,
+    for (final track in tracks) {
+      final (path, _) = _FlowGeometry.of(track.points, size);
+      final (glow, base) = _paints.putIfAbsent(
+        track.color,
+        () => (
+          _stroke(track.color.withValues(alpha: 0.1), 8, blur: 4, cap: StrokeCap.butt),
+          _stroke(track.color.withValues(alpha: 0.2), 2),
+        ),
       );
-    }
-
-    if (batteryPower > _minBatteryPower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        inverterToBatteryPathPx,
-        AppColors.emerald,
-        animation.value,
-        batteryPower,
-        reverseAnimation: true,
-      );
-    } else if (batteryPower < -_minBatteryPower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        batteryToInverterPathPx,
-        AppColors.red,
-        animation.value,
-        batteryPower.abs(),
-        reverseAnimation: true,
-      );
-    }
-
-    if (homePower > _minHomePower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        inverterToHomePathPx,
-        AppColors.green,
-        animation.value,
-        homePower,
-        reverseAnimation: true,
-      );
-    }
-
-    if (gridPower > _minGridPower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        gridToInverterPathPx,
-        AppColors.red,
-        animation.value,
-        gridPower,
-        reverseAnimation: true,
-      );
-    } else if (gridPower < -_minGridPower) {
-      _drawFlowPathPx(
-        canvas,
-        size,
-        inverterToGridPathPx,
-        AppColors.emerald,
-        animation.value,
-        gridPower.abs(),
-        reverseAnimation: true,
-      );
-    }
-  }
-
-  void _drawFlowPathPx(
-    Canvas canvas,
-    Size size,
-    List<List<double>> pathPointsPx,
-    Color color,
-    double animationValue,
-    double power, {
-    bool reverseAnimation = false,
-  }) {
-    if (pathPointsPx.length < 2) return;
-
-    final points = pathPointsPx.map((p) => _convertPoint(p[0], p[1], size)).toList();
-
-    final path = Path();
-    path.moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
-    }
-
-    final pathMetrics = path.computeMetrics().first;
-    final pathLength = pathMetrics.length;
-
-    final glowPaint = Paint()
-      ..color = color.withValues(alpha: 0.1)
-      ..strokeWidth = 8
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    canvas.drawPath(path, glowPaint);
-
-    final basePaint = Paint()
-      ..color = color.withValues(alpha: 0.2)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-    canvas.drawPath(path, basePaint);
-
-    // Folosim pattern length ca bază pentru animație smooth (fără salt la reset)
-    const dashLength = 12.0;
-    const gapLength = 20.0;
-    final patternLength = dashLength + gapLength;
-
-    final effectiveAnimValue = reverseAnimation ? (1.0 - animationValue) : animationValue;
-    final dashOffset = effectiveAnimValue * patternLength;
-    final dashPattern = [dashLength, gapLength];
-
-    final dashPaint = Paint()
-      ..color = color
-      ..strokeWidth = 3
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    _drawDashedPathWithOffset(
-      canvas,
-      path,
-      dashPaint,
-      dashPattern,
-      dashOffset,
-      pathLength,
-    );
-  }
-
-  void _drawDashedPathWithOffset(
-    Canvas canvas,
-    Path path,
-    Paint paint,
-    List<double> dashPattern,
-    double dashOffset,
-    double pathLength,
-  ) {
-    final pathMetrics = path.computeMetrics().first;
-    final dashLength = dashPattern[0];
-    final gapLength = dashPattern[1];
-    final patternLength = dashLength + gapLength;
-
-    double currentOffset = dashOffset % patternLength;
-    double distance = -currentOffset;
-
-    while (distance < pathLength) {
-      final double dashStart = math.max(0.0, distance);
-      final double dashEnd = math.min(pathLength, distance + dashLength);
-
-      if (dashStart < pathLength && dashEnd > 0 && dashEnd > dashStart) {
-        final extractedPath = pathMetrics.extractPath(dashStart, dashEnd);
-
-        final glowPaint = Paint()
-          ..color = paint.color.withValues(alpha: 0.4)
-          ..strokeWidth = paint.strokeWidth + 2
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-        canvas.drawPath(extractedPath, glowPaint);
-
-        canvas.drawPath(extractedPath, paint);
-      }
-
-      distance += patternLength;
+      canvas.drawPath(path, glow);
+      canvas.drawPath(path, base);
     }
   }
 
   @override
-  bool shouldRepaint(covariant EnergyFlowPainter oldDelegate) => true;
+  bool shouldRepaint(covariant EnergyFlowLinesPainter oldDelegate) => !listEquals(oldDelegate.tracks, tracks);
+}
+
+/// The moving dashes. All dashes of a flow go into one path, so the glow is a single blur per flow.
+class EnergyFlowPainter extends CustomPainter {
+  final Animation<double> animation;
+  final List<FlowTrack> tracks;
+
+  EnergyFlowPainter({required this.animation, required this.tracks}) : super(repaint: animation);
+
+  static final Map<Color, (Paint, Paint)> _paints = {};
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const patternLength = _dashLength + _gapLength;
+    // the dashes run from the end of each path towards its start
+    final dashOffset = (1.0 - animation.value) * patternLength;
+
+    for (final track in tracks) {
+      final (_, metric) = _FlowGeometry.of(track.points, size);
+      final length = metric.length;
+      final dashes = Path();
+      for (var distance = -(dashOffset % patternLength); distance < length; distance += patternLength) {
+        final start = math.max(0.0, distance);
+        final end = math.min(length, distance + _dashLength);
+        if (end > start) dashes.addPath(metric.extractPath(start, end), Offset.zero);
+      }
+      final (glow, dash) = _paints.putIfAbsent(
+        track.color,
+        () => (_stroke(track.color.withValues(alpha: 0.4), 5, blur: 2), _stroke(track.color, 3)),
+      );
+      canvas.drawPath(dashes, glow);
+      canvas.drawPath(dashes, dash);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant EnergyFlowPainter oldDelegate) =>
+      oldDelegate.animation != animation || !listEquals(oldDelegate.tracks, tracks);
 }

@@ -1,8 +1,8 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_interface/core/theme.dart';
+import 'package:flutter_interface/widgets/common/screen_header.dart';
 
 class ContactScreen extends StatelessWidget {
   const ContactScreen({super.key});
@@ -25,10 +25,7 @@ class ContactScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: AppColors.deepBackground,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: const BackNavButton(icon: Icons.arrow_back_ios_new_rounded),
         title: Text(
           'Contact',
           style: GoogleFonts.inter(
@@ -39,143 +36,142 @@ class ContactScreen extends StatelessWidget {
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeaderCard(),
-              const SizedBox(height: 24),
-              Text(
-                'Contactează-ne',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
+      body: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeaderCard(),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Contactează-ne',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildContactOption(
+                    context: context,
+                    icon: Icons.email_rounded,
+                    title: 'Email',
+                    subtitle: 'support@vpp-simulator.ro',
+                    color: AppColors.blue,
+                    onTap: () => _copyToClipboard(context, 'support@vpp-simulator.ro', 'Email'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildContactOption(
+                    context: context,
+                    icon: Icons.phone_rounded,
+                    title: 'Telefon',
+                    subtitle: '+40 721 234 567',
+                    color: AppColors.green,
+                    onTap: () => _copyToClipboard(context, '+40721234567', 'Telefon'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildContactOption(
+                    context: context,
+                    icon: Icons.location_on_rounded,
+                    title: 'Adresă',
+                    subtitle: 'Str. Energiei Nr. 10, București',
+                    color: AppColors.amber,
+                    onTap: () => _copyToClipboard(context, 'Str. Energiei Nr. 10, București', 'Adresa'),
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Program suport',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildScheduleCard(),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Întrebări frecvente',
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildFaqItem(
+                    question: 'Cum pot monitoriza consumul de energie?',
+                    answer:
+                        'Accesează secțiunea Energy din meniul principal pentru a vedea consumul în timp real și istoricul.',
+                  ),
+                  _buildFaqItem(
+                    question: 'Ce înseamnă P2P Trading?',
+                    answer:
+                        'P2P Trading îți permite să vinzi sau să cumperi energie direct de la alți prosumatori din comunitate.',
+                  ),
+                  _buildFaqItem(
+                    question: 'Cum funcționează bateria Powerwall?',
+                    answer:
+                        'Bateria stochează energia solară în exces și o folosește când producția solară este scăzută sau în caz de pană de curent.',
+                  ),
+                  const SizedBox(height: 40),
+                ],
               ),
-              const SizedBox(height: 16),
-              _buildContactOption(
-                context: context,
-                icon: Icons.email_rounded,
-                title: 'Email',
-                subtitle: 'support@vpp-simulator.ro',
-                color: AppColors.blue,
-                onTap: () => _copyToClipboard(context, 'support@vpp-simulator.ro', 'Email'),
-              ),
-              const SizedBox(height: 12),
-              _buildContactOption(
-                context: context,
-                icon: Icons.phone_rounded,
-                title: 'Telefon',
-                subtitle: '+40 721 234 567',
-                color: AppColors.green,
-                onTap: () => _copyToClipboard(context, '+40721234567', 'Telefon'),
-              ),
-              const SizedBox(height: 12),
-              _buildContactOption(
-                context: context,
-                icon: Icons.location_on_rounded,
-                title: 'Adresă',
-                subtitle: 'Str. Energiei Nr. 10, București',
-                color: AppColors.amber,
-                onTap: () => _copyToClipboard(context, 'Str. Energiei Nr. 10, București', 'Adresa'),
-              ),
-              const SizedBox(height: 32),
-              Text(
-                'Program suport',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildScheduleCard(),
-              const SizedBox(height: 32),
-              Text(
-                'Întrebări frecvente',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildFaqItem(
-                question: 'Cum pot monitoriza consumul de energie?',
-                answer:
-                    'Accesează secțiunea Energy din meniul principal pentru a vedea consumul în timp real și istoricul.',
-              ),
-              _buildFaqItem(
-                question: 'Ce înseamnă P2P Trading?',
-                answer:
-                    'P2P Trading îți permite să vinzi sau să cumperi energie direct de la alți prosumatori din comunitate.',
-              ),
-              _buildFaqItem(
-                question: 'Cum funcționează bateria Powerwall?',
-                answer:
-                    'Bateria stochează energia solară în exces și o folosește când producția solară este scăzută sau în caz de pană de curent.',
-              ),
-              const SizedBox(height: 40),
-            ],
-          ),
-        ),
-      ),
+            ),
+          )),
     );
   }
 
   Widget _buildHeaderCard() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceAlt.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-              width: 1,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceAlt.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.blue.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.support_agent_rounded,
+                color: AppColors.blue,
+                size: 40,
+              ),
             ),
-          ),
-          child: Column(
-            children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppColors.blue.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.support_agent_rounded,
-                  color: AppColors.blue,
-                  size: 40,
-                ),
+            const SizedBox(height: 16),
+            Text(
+              'Suntem aici să te ajutăm',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Suntem aici să te ajutăm',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Echipa noastră de suport este disponibilă pentru orice întrebare despre sistemul tău de energie.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 14,
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Echipa noastră de suport este disponibilă pentru orice întrebare despre sistemul tău de energie.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_interface/models/house.dart';
 import 'package:flutter_interface/widgets/smart_stack/page_indicator.dart';
@@ -8,6 +7,8 @@ import 'package:flutter_interface/widgets/smart_stack/pages/battery_page.dart';
 import 'package:flutter_interface/core/theme.dart';
 
 class SmartStack extends StatefulWidget {
+  static const double height = 100;
+
   final Battery? battery;
   final double batteryPercent;
   final double currentConsumptionKw;
@@ -55,15 +56,16 @@ class _SmartStackState extends State<SmartStack> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+    return Semantics(
+      container: true,
+      identifier: 'home-smart-stack',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
           child: Container(
             width: double.infinity,
-            height: 100,
+            height: SmartStack.height,
             decoration: BoxDecoration(
               color: AppColors.surfaceAlt.withValues(alpha: 0.75),
               borderRadius: BorderRadius.circular(20),

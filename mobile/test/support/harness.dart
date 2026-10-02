@@ -35,8 +35,8 @@ const double interToRobotoWidth = 1.1;
 /// happen on a phone. Roboto stands in for Inter (google_fonts cannot download in tests);
 /// weight 600 uses Roboto Bold so the estimate errs on the wide side.
 Future<void> loadTestFonts() async {
-  final exe = Platform.resolvedExecutable.replaceAll(r'\', '/');
-  final dir = '${exe.substring(0, exe.indexOf('/bin/cache/'))}/bin/cache/artifacts/material_fonts';
+  // shipped with the tests so they do not depend on what the Flutter SDK has cached
+  const dir = 'test/support/fonts';
   const files = {
     100: 'thin',
     200: 'thin',
@@ -56,9 +56,8 @@ Future<void> loadTestFonts() async {
   for (final entry in files.entries) {
     final weight = entry.key == 400 ? 'regular' : '${entry.key}';
     final italic = entry.key == 400 ? 'italic' : '${entry.key}italic';
-    final italicFile = entry.value == 'regular' ? 'italic' : '${entry.value}italic';
     await load('Inter_$weight', entry.value);
-    await load('Inter_$italic', italicFile);
+    await load('Inter_$italic', entry.value);
   }
   await load('Inter', 'regular');
   await load('Roboto', 'regular');

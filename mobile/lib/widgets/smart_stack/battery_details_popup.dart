@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_interface/models/house.dart';
@@ -32,139 +31,136 @@ class BatteryDetailsPopup extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceAlt.withValues(alpha: 0.9),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1),
-              width: 1,
-            ),
+      child: Container(
+        padding: AppTheme.sheetPadding(context, 24),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceAlt.withValues(alpha: 0.9),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 1,
           ),
-          child: SingleChildScrollView(
-              child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Icon(Icons.battery_charging_full_rounded, color: color, size: 28),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Bateria casei',
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              _buildSocCircle(color),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.bolt_rounded,
-                      label: 'Capacitate',
-                      value: '${b.capacityKwh.toStringAsFixed(1)} kWh',
-                      color: AppColors.amber,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.energy_savings_leaf_rounded,
-                      label: 'Disponibil peste rezervă',
-                      value: '${b.availableKwh.toStringAsFixed(1)} kWh',
-                      color: AppColors.emerald,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.shield_rounded,
-                      label: 'Rezervă backup',
-                      value: '${reservePercent.toStringAsFixed(0)}% (${b.socMinKwh.toStringAsFixed(1)} kWh)',
-                      color: AppColors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.hub_rounded,
-                      label: 'Rezervă VPP',
-                      value: '${b.vppReserveKwh.toStringAsFixed(2)} kWh',
-                      color: const Color(0xFF8B5CF6),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.swap_vert_rounded,
-                      label: 'Putere max. înc./desc.',
-                      value: '${b.pChMaxKw.toStringAsFixed(1)} / ${b.pDisMaxKw.toStringAsFixed(1)} kW',
-                      color: AppColors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.percent_rounded,
-                      label: 'Randament înc./desc.',
-                      value: '${(b.etaCh * 100).toStringAsFixed(0)}% / ${(b.etaDis * 100).toStringAsFixed(0)}%',
-                      color: AppColors.slate,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.1),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Închide',
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-          )),
         ),
+        child: SingleChildScrollView(
+            child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Icon(Icons.battery_charging_full_rounded, color: color, size: 28),
+                const SizedBox(width: 12),
+                Text(
+                  'Bateria casei',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildSocCircle(color),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.bolt_rounded,
+                    label: 'Capacitate',
+                    value: '${b.capacityKwh.toStringAsFixed(1)} kWh',
+                    color: AppColors.amber,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.energy_savings_leaf_rounded,
+                    label: 'Disponibil peste rezervă',
+                    value: '${b.availableKwh.toStringAsFixed(1)} kWh',
+                    color: AppColors.emerald,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.shield_rounded,
+                    label: 'Rezervă backup',
+                    value: '${reservePercent.toStringAsFixed(0)}% (${b.socMinKwh.toStringAsFixed(1)} kWh)',
+                    color: AppColors.blue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.hub_rounded,
+                    label: 'Rezervă VPP',
+                    value: '${b.vppReserveKwh.toStringAsFixed(2)} kWh',
+                    color: const Color(0xFF8B5CF6),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.swap_vert_rounded,
+                    label: 'Putere max. înc./desc.',
+                    value: '${b.pChMaxKw.toStringAsFixed(1)} / ${b.pDisMaxKw.toStringAsFixed(1)} kW',
+                    color: AppColors.green,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildStatCard(
+                    icon: Icons.percent_rounded,
+                    label: 'Randament înc./desc.',
+                    value: '${(b.etaCh * 100).toStringAsFixed(0)}% / ${(b.etaDis * 100).toStringAsFixed(0)}%',
+                    color: AppColors.slate,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'Închide',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        )),
       ),
     );
   }

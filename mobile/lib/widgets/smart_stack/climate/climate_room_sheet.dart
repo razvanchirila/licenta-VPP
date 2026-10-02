@@ -16,7 +16,7 @@ class ClimateRoomSheet extends StatelessWidget {
         color: AppColors.surfaceAlt.withValues(alpha: 0.95),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.all(20),
+      padding: AppTheme.sheetPadding(context, 20),
       child: SingleChildScrollView(
           child: Column(
         mainAxisSize: MainAxisSize.min,

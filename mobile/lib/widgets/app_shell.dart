@@ -30,18 +30,25 @@ class AppShell extends StatelessWidget {
       return FakeIosStatusBar(backgroundColor: AppColors.deepBackground, child: child);
     }
 
-    final browserInsets = browserSafeArea();
+    // The app draws edge to edge (under the status bar and the home indicator); the insets only
+    // reach the screens through MediaQuery, so backgrounds and sheets still fill the screen.
+    // iOS also blurs content in a band just below a translucent status bar, so every screen starts
+    // a little lower than the bare safe area.
+    final measured = _max(media.padding, browserSafeArea());
+    final insets = measured.top > 0 ? measured.copyWith(top: measured.top + statusBarClearance) : measured;
     return ColoredBox(
       color: AppColors.deepBackground,
       child: MediaQuery(
         data: media.copyWith(
-          padding: _max(media.padding, browserInsets),
-          viewPadding: _max(media.viewPadding, browserInsets),
+          padding: insets,
+          viewPadding: _max(media.viewPadding, insets),
         ),
-        child: SafeArea(child: child),
+        child: child,
       ),
     );
   }
+
+  static const double statusBarClearance = 24;
 
   static EdgeInsets _max(EdgeInsets a, EdgeInsets b) => EdgeInsets.fromLTRB(
         a.left > b.left ? a.left : b.left,

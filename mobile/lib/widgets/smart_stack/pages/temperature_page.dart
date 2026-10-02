@@ -63,7 +63,7 @@ class _TemperaturePageState extends State<TemperaturePage> {
           Expanded(
             child: TemperatureCard(
               temperature: appState.indoorTemperature,
-              label: 'Interior (țintă)',
+              label: 'Interior',
               icon: Icons.home_rounded,
               iconColor: AppColors.amber,
               isInteractive: true,

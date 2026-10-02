@@ -14,11 +14,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Outdoor weather from WeatherAPI; null until loaded, "indisponibil" on error.
+  // Outdoor weather from WeatherAPI; null until loaded, then "--°" with the plain label "Vreme" on error.
   double? _outdoorTemperature;
   double? get outdoorTemperature => _outdoorTemperature;
 
-  String _weatherDescription = 'Se încarcă...';
+  String _weatherDescription = 'Vreme';
   String get weatherDescription => _weatherDescription;
 
   IconData _weatherIcon = Icons.cloud_outlined;

@@ -121,7 +121,7 @@ void main() {
             await tester.fling(find.byType(PageView), const Offset(0, 60), 800);
             await pumpFrames(tester);
           }
-          await tapAndSettle(tester, find.text('Interior (țintă)'));
+          await tapAndSettle(tester, find.text('Interior'));
           expect(find.text('Control Climă'), findsOneWidget);
           await tapAndSettle(tester, find.byIcon(Icons.schedule_rounded));
           expect(find.text('Programare Automată'), findsOneWidget);

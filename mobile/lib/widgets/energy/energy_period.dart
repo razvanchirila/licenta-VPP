@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:intl/intl.dart';
 
+const List<String> weekdaysRo = ['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum'];
+
 class EnergyPeriod {
   EnergyPeriod._();
 
@@ -42,7 +44,7 @@ class EnergyPeriod {
   static String axisLabel(DateTime time, String period) {
     switch (period) {
       case week:
-        return DateFormat('E').format(time);
+        return weekdaysRo[time.weekday - 1];
       case month:
         return DateFormat('dd').format(time);
       default:
@@ -50,14 +52,17 @@ class EnergyPeriod {
     }
   }
 
-  static String adjective(String period) {
+  /// Romanian adjectives agree with the noun: "Producție zilnică" but "Consum zilnic".
+  static String adjective(String period, {bool feminine = true}) {
+    final String base;
     switch (period) {
       case week:
-        return 'săptămânală';
+        base = 'săptămânal';
       case month:
-        return 'lunară';
+        base = 'lunar';
       default:
-        return 'zilnică';
+        base = 'zilnic';
     }
+    return feminine ? '$baseă' : base;
   }
 }

@@ -28,8 +28,7 @@ class MonthlyComparisonCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Flexible(
-                  child: const Text('Comparație lunară', style: statsCardTitle, overflow: TextOverflow.ellipsis)),
+              const Flexible(child: Text('Comparație lunară', style: statsCardTitle, overflow: TextOverflow.ellipsis)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -63,6 +62,7 @@ class MonthlyComparisonCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _MonthColumn(
+                  id: 'stats-current-month',
                   title: comparison.currentMonth,
                   kwh: comparison.currentMonthKwh,
                   note: comparison.isProjection
@@ -71,7 +71,11 @@ class MonthlyComparisonCard extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: _MonthColumn(title: comparison.previousMonth, kwh: comparison.previousMonthKwh),
+                child: _MonthColumn(
+                  id: 'stats-previous-month',
+                  title: comparison.previousMonth,
+                  kwh: comparison.previousMonthKwh,
+                ),
               ),
             ],
           ),
@@ -82,28 +86,33 @@ class MonthlyComparisonCard extends StatelessWidget {
 }
 
 class _MonthColumn extends StatelessWidget {
+  final String id;
   final String title;
   final double kwh;
   final String? note;
 
-  const _MonthColumn({required this.title, required this.kwh, this.note});
+  const _MonthColumn({required this.id, required this.title, required this.kwh, this.note});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-        Text(
-          formatKwh(kwh, decimals: 2),
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        if (note != null)
+    return Semantics(
+      container: true,
+      identifier: id,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
           Text(
-            note!,
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+            formatKwh(kwh, decimals: 2),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
-      ],
+          if (note != null)
+            Text(
+              note!,
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+            ),
+        ],
+      ),
     );
   }
 }

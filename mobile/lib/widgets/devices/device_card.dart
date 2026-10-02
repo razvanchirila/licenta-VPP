@@ -23,76 +23,89 @@ class DeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOn = device.statusOn;
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isOn ? AppColors.green.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.06),
-            width: 1,
+    final toggle = (device.critical || busy) ? null : onToggle;
+    return Semantics(
+      container: true,
+      identifier: 'device-${device.id}',
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isOn ? AppColors.green.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.06),
+              width: 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: isOn ? AppColors.green.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: isOn ? AppColors.green.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(device.icon, color: isOn ? AppColors.green : Colors.white.withValues(alpha: 0.4), size: 24),
               ),
-              child: Icon(device.icon, color: isOn ? AppColors.green : Colors.white.withValues(alpha: 0.4), size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          device.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            device.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                      if (device.critical) ...[const SizedBox(width: 8), const _CriticalBadge()],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    device.scheduleText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isOn ? device.currentDrawText : 'Oprit · ${formatPowerW(device.powerW)}',
-                    style: GoogleFonts.inter(
-                      color: isOn ? AppColors.amber : Colors.white.withValues(alpha: 0.4),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                        if (device.critical) ...[const SizedBox(width: 8), const _CriticalBadge()],
+                      ],
                     ),
-                  ),
-                  Text(
-                    'Consumat: ${formatKwh(device.accumulatedEnergyKwh, decimals: 2)}',
-                    style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      device.scheduleText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.5), fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isOn ? device.currentDrawText : 'Oprit · ${formatPowerW(device.powerW)}',
+                      style: GoogleFonts.inter(
+                        color: isOn ? AppColors.amber : Colors.white.withValues(alpha: 0.4),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      'Consumat: ${formatKwh(device.accumulatedEnergyKwh, decimals: 2)}',
+                      style: GoogleFonts.inter(color: Colors.white.withValues(alpha: 0.35), fontSize: 11),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Tooltip(
-              message: device.critical ? 'Dispozitiv critic, nu poate fi oprit' : '',
-              child: _ToggleSwitch(isOn: isOn, busy: busy, onTap: (device.critical || busy) ? null : onToggle),
-            ),
-          ],
+              Tooltip(
+                message: device.critical ? 'Dispozitiv critic, nu poate fi oprit' : '',
+                child: Semantics(
+                  container: true,
+                  identifier: 'device-${device.id}-toggle',
+                  label: device.name,
+                  toggled: isOn,
+                  enabled: toggle != null,
+                  child: _ToggleSwitch(isOn: isOn, busy: busy, onTap: toggle),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -38,6 +38,24 @@ class Battery {
         etaCh: asDouble(j['eta_ch'], 1.0),
         etaDis: asDouble(j['eta_dis'], 1.0),
       );
+
+  @override
+  bool operator ==(Object other) =>
+      other is Battery &&
+      other.capacityKwh == capacityKwh &&
+      other.socKwh == socKwh &&
+      other.socPercent == socPercent &&
+      other.socMinKwh == socMinKwh &&
+      other.availableKwh == availableKwh &&
+      other.vppReserveKwh == vppReserveKwh &&
+      other.pChMaxKw == pChMaxKw &&
+      other.pDisMaxKw == pDisMaxKw &&
+      other.etaCh == etaCh &&
+      other.etaDis == etaDis;
+
+  @override
+  int get hashCode => Object.hash(
+      capacityKwh, socKwh, socPercent, socMinKwh, availableKwh, vppReserveKwh, pChMaxKw, pDisMaxKw, etaCh, etaDis);
 }
 
 /// Result of the last simulation step for a house (`HouseStep`), in kW.

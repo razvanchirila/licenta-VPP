@@ -102,54 +102,61 @@ class _ProfileButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
-            ),
-            child: const Icon(
-              Icons.person_rounded,
-              color: Colors.white70,
-              size: 24,
-            ),
-          ),
-          if (notificationCount > 0)
-            Positioned(
-              right: 0,
-              top: 0,
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: AppTheme.theme.colorScheme.error,
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(
-                    color: AppTheme.theme.colorScheme.surface,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    notificationCount > 9 ? '9+' : notificationCount.toString(),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      identifier: 'home-profile',
+      button: true,
+      label: 'Profil',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Stack(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  width: 1,
                 ),
               ),
+              child: const Icon(
+                Icons.person_rounded,
+                color: Colors.white70,
+                size: 24,
+              ),
             ),
-        ],
+            if (notificationCount > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: scheme.error,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: scheme.surface,
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      notificationCount > 9 ? '9+' : notificationCount.toString(),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -191,25 +198,27 @@ class _StatusIndicatorState extends State<_StatusIndicator> with SingleTickerPro
   Widget build(BuildContext context) {
     final color = widget.isDischarging ? AppTheme.battery : AppTheme.success;
 
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: _animation.value),
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: _animation.value * 0.5),
-                blurRadius: 6,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-        );
-      },
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          return Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: _animation.value),
+              borderRadius: BorderRadius.circular(4),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: _animation.value * 0.5),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

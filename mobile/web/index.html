@@ -22,6 +22,7 @@
 
   <style>
     html, body { margin: 0; height: 100%; background-color: #0A0A0A; }
+    html.vpp-standalone, html.vpp-standalone body { height: var(--vpp-height) !important; }
   </style>
   <script>
     // Flutter replaces the viewport meta at startup and drops viewport-fit=cover.
@@ -46,6 +47,31 @@
         return parseFloat(v) || 0;
       });
     };
+
+    // An iOS home-screen app with the black-translucent status bar gets a layout viewport shorter
+    // than the screen by the status bar height. Flutter sizes its canvas from documentElement
+    // .clientHeight, which left an empty band at the bottom; a full-screen app is the screen size.
+    (function () {
+      if (window.navigator.standalone !== true) return;
+      var root = document.documentElement;
+      var nativeHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'clientHeight').get;
+      function screenHeight() {
+        var landscape = window.innerWidth > window.innerHeight;
+        var width = landscape ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+        var height = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+        var own = nativeHeight.call(root);
+        // split view or any window narrower than the screen: keep what the browser reports
+        return Math.abs(window.innerWidth - width) > 1 ? own : Math.max(own, height);
+      }
+      function apply() {
+        root.style.setProperty('--vpp-height', screenHeight() + 'px');
+      }
+      root.classList.add('vpp-standalone');
+      Object.defineProperty(root, 'clientHeight', { configurable: true, get: screenHeight });
+      apply();
+      window.addEventListener('resize', apply);
+      window.addEventListener('orientationchange', apply);
+    })();
 
     window.vppStandalone = function () {
       return window.navigator.standalone === true ||

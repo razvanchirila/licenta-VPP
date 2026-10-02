@@ -75,6 +75,7 @@ class _EnergyScreenState extends State<EnergyScreen> with AsyncLoader<EnergyChar
                     visibility: _visibility,
                     onChanged: (v) => setState(() => _visibility = v),
                   ),
+                  tooltip: 'Serii afișate',
                   icon: Icon(Icons.tune_rounded, color: Colors.white.withValues(alpha: 0.8), size: 24),
                 ),
               ],
@@ -143,11 +144,21 @@ class _EnergyScreenState extends State<EnergyScreen> with AsyncLoader<EnergyChar
       content = EnergyLineChart(points: points, period: _period, visibility: _visibility);
     }
 
-    return SizedBox(
-      height: 300,
-      child: SurfaceCard(
-        padding: points.isEmpty || state.isLoading ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 16, 16, 8),
-        child: content,
+    return Semantics(
+      container: true,
+      identifier: 'energy-chart',
+      label: state.isLoading
+          ? 'Grafic energie, se încarcă'
+          : points.isEmpty
+              ? null
+              : 'Grafic energie, ${points.length} puncte',
+      excludeSemantics: state.isLoading || points.isNotEmpty,
+      child: SizedBox(
+        height: 300,
+        child: SurfaceCard(
+          padding: points.isEmpty || state.isLoading ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 16, 16, 8),
+          child: content,
+        ),
       ),
     );
   }
@@ -156,6 +167,7 @@ class _EnergyScreenState extends State<EnergyScreen> with AsyncLoader<EnergyChar
     return BreakdownCard(
       title: 'Producție ${EnergyPeriod.adjective(_period)}:',
       totalValue: formatEnergyKwh(b.totalSolar),
+      semanticsId: 'energy-production-total',
       items: [
         _productionItem('Consum direct', b.solarToLoad, AppColors.blue, b),
         _productionItem('În baterie', b.solarToBattery, AppColors.green, b),
@@ -167,8 +179,9 @@ class _EnergyScreenState extends State<EnergyScreen> with AsyncLoader<EnergyChar
 
   Widget _buildConsumptionCard(EnergyBreakdown b) {
     return BreakdownCard(
-      title: 'Consum ${EnergyPeriod.adjective(_period)}:',
+      title: 'Consum ${EnergyPeriod.adjective(_period, feminine: false)}:',
       totalValue: formatEnergyKwh(b.totalConsumption),
+      semanticsId: 'energy-consumption-total',
       items: [
         _consumptionItem('Din solar', b.consumptionFromSolar, AppColors.red, b),
         _consumptionItem('Din baterie', b.consumptionFromBattery, AppColors.green, b),

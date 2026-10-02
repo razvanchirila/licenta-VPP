@@ -257,6 +257,10 @@ class AppTheme {
         borderRadius: BorderRadius.circular(radius),
       );
 
+  /// Keeps sheet content above the home indicator while the sheet background reaches the screen edge.
+  static EdgeInsets sheetPadding(BuildContext context, double all) =>
+      EdgeInsets.fromLTRB(all, all, all, all + MediaQuery.paddingOf(context).bottom);
+
   static BoxDecoration sheetDecoration({Color color = AppColors.surface, double radius = 20}) => BoxDecoration(
         color: color,
         borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),

@@ -7,6 +7,7 @@ import 'package:flutter_interface/models/trading.dart';
 import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
 import 'package:flutter_interface/widgets/common/async_body.dart';
+import 'package:flutter_interface/widgets/common/screen_header.dart';
 import 'package:flutter_interface/widgets/price_chart_widget.dart';
 import 'package:flutter_interface/widgets/trading/history_tab.dart';
 import 'package:flutter_interface/widgets/trading/trading_data.dart';
@@ -88,7 +89,9 @@ class _TradingScreenState extends State<TradingScreen>
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: isError ? Colors.red : Colors.green),
+      SnackBar(
+          content: Semantics(container: true, identifier: 'snackbar', child: Text(message)),
+          backgroundColor: isError ? Colors.red : Colors.green),
     );
   }
 
@@ -118,6 +121,7 @@ class _TradingScreenState extends State<TradingScreen>
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
+        leading: const BackNavButton(),
         title: Text('Trading P2P', style: GoogleFonts.inter(color: Colors.white)),
         bottom: TabBar(
           controller: _tabController,
@@ -129,36 +133,41 @@ class _TradingScreenState extends State<TradingScreen>
           indicatorSize: TabBarIndicatorSize.tab,
           labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
           unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w400, fontSize: 12),
-          tabs: const [
-            Tab(text: 'Preț', icon: Icon(Icons.show_chart)),
-            Tab(text: 'Portofel', icon: Icon(Icons.account_balance_wallet)),
-            Tab(text: 'Istoric', icon: Icon(Icons.history)),
-            Tab(text: 'Setări', icon: Icon(Icons.settings)),
+          tabs: [
+            _tab('trading-tab-price', 'Preț', Icons.show_chart),
+            _tab('trading-tab-wallet', 'Portofel', Icons.account_balance_wallet),
+            _tab('trading-tab-history', 'Istoric', Icons.history),
+            _tab('trading-tab-settings', 'Setări', Icons.settings),
           ],
         ),
       ),
-      body: AsyncBody<TradingData>(
-        value: state,
-        onRetry: _loadTradingData,
-        accent: _accent,
-        builder: (data) => TabBarView(
-          controller: _tabController,
-          children: [
-            _buildPriceChartTab(),
-            WalletTab(
-              wallet: data.wallet,
-              stats: data.stats,
-              transactions: data.walletTransactions,
-              onRefresh: _loadTradingData,
-              onTransfer: () => _transferToVpp(data.wallet),
+      body: SafeArea(
+          top: false,
+          child: AsyncBody<TradingData>(
+            value: state,
+            onRetry: _loadTradingData,
+            accent: _accent,
+            builder: (data) => TabBarView(
+              controller: _tabController,
+              children: [
+                _buildPriceChartTab(),
+                WalletTab(
+                  wallet: data.wallet,
+                  stats: data.stats,
+                  transactions: data.walletTransactions,
+                  onRefresh: _loadTradingData,
+                  onTransfer: () => _transferToVpp(data.wallet),
+                ),
+                HistoryTab(trades: data.history, onRefresh: _loadTradingData),
+                TradingSettingsTab(prefs: data.prefs, onMessage: _showSnackBar),
+              ],
             ),
-            HistoryTab(trades: data.history, onRefresh: _loadTradingData),
-            TradingSettingsTab(prefs: data.prefs, onMessage: _showSnackBar),
-          ],
-        ),
-      ),
+          )),
     );
   }
+
+  Widget _tab(String id, String text, IconData icon) =>
+      Semantics(identifier: id, child: Tab(text: text, icon: Icon(icon)));
 
   Widget _buildPriceChartTab() {
     return SingleChildScrollView(

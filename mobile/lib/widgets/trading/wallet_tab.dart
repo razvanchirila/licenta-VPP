@@ -100,9 +100,16 @@ class _WalletCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          Text(
-            formatLei(w.balanceLei),
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w700),
+          Semantics(
+            container: true,
+            identifier: 'wallet-balance',
+            label: 'Sold',
+            value: formatLei(w.balanceLei),
+            excludeSemantics: true,
+            child: Text(
+              formatLei(w.balanceLei),
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w700),
+            ),
           ),
           const SizedBox(height: 16),
           Row(

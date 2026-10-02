@@ -47,58 +47,66 @@ class _FakeIosStatusBarState extends State<FakeIosStatusBar> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          color: widget.backgroundColor,
-          child: SafeArea(
-            bottom: false,
-            child: Container(
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    left: 0,
-                    child: Text(
-                      _currentTime,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                        decoration: TextDecoration.none,
+        Semantics(
+          container: true,
+          identifier: 'fake-status-bar',
+          label: 'Bară de stare demonstrativă',
+          excludeSemantics: true,
+          child: Container(
+            color: widget.backgroundColor,
+            child: SafeArea(
+              bottom: false,
+              child: Container(
+                height: 54,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      child: Text(
+                        _currentTime,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                          decoration: TextDecoration.none,
+                        ),
                       ),
                     ),
-                  ),
-                  Center(
-                    child: Container(
-                      width: 126,
-                      height: 37,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(24),
+                    Center(
+                      child: Container(
+                        width: 126,
+                        height: 37,
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
                       ),
                     ),
-                  ),
-                  const Positioned(
-                    right: 0,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _CellularSignal(),
-                        SizedBox(width: 6),
-                        Icon(Icons.wifi_rounded, color: Colors.white, size: 18),
-                        SizedBox(width: 6),
-                        _BatteryIndicator(),
-                      ],
+                    const Positioned(
+                      right: 0,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _CellularSignal(),
+                          SizedBox(width: 6),
+                          Icon(Icons.wifi_rounded, color: Colors.white, size: 18),
+                          SizedBox(width: 6),
+                          _BatteryIndicator(),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        Expanded(child: widget.child),
+        // The page route's modal barrier blocks the semantics of everything painted before it in
+        // the same container, which would hide the bar from screen readers.
+        Expanded(child: Semantics(container: true, child: widget.child)),
       ],
     );
   }

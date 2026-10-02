@@ -18,8 +18,15 @@ class BreakdownCard extends StatelessWidget {
   final String title;
   final String totalValue;
   final List<BreakdownItem> items;
+  final String? semanticsId;
 
-  const BreakdownCard({super.key, required this.title, required this.totalValue, required this.items});
+  const BreakdownCard({
+    super.key,
+    required this.title,
+    required this.totalValue,
+    required this.items,
+    this.semanticsId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -33,8 +40,15 @@ class BreakdownCard extends StatelessWidget {
             children: [
               Flexible(child: Text(title, style: AppText.cardTitle, maxLines: 1, overflow: TextOverflow.ellipsis)),
               const SizedBox(width: 8),
-              Text(totalValue,
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+              Semantics(
+                container: true,
+                identifier: semanticsId,
+                label: title,
+                value: totalValue,
+                excludeSemantics: true,
+                child: Text(totalValue,
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+              ),
             ],
           ),
           const SizedBox(height: 16),

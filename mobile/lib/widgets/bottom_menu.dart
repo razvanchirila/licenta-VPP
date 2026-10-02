@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,25 +12,31 @@ import 'package:flutter_interface/screens/trading_screen.dart';
 import 'package:flutter_interface/core/theme.dart';
 
 class _MenuEntry {
+  final String id;
   final IconData icon;
   final String title;
   final Widget Function() build;
 
-  const _MenuEntry(this.icon, this.title, this.build);
+  const _MenuEntry(this.id, this.icon, this.title, this.build);
 }
 
 final List<_MenuEntry> _entries = [
-  _MenuEntry(Icons.trending_up, 'Energie', () => const EnergyScreen()),
-  _MenuEntry(Icons.eco, 'Impact', () => const ImpactScreen()),
-  _MenuEntry(Icons.settings, 'Setări', () => const SettingsScreen()),
-  _MenuEntry(Icons.devices_other_rounded, 'Dispozitive', () => const DevicesScreen()),
-  _MenuEntry(Icons.bar_chart_rounded, 'Statistici', () => const StatisticsScreen()),
-  _MenuEntry(Icons.swap_horiz_rounded, 'Trading P2P', () => const TradingScreen()),
-  _MenuEntry(Icons.contact_support_rounded, 'Contact', () => const ContactScreen()),
+  _MenuEntry('menu-energie', Icons.trending_up, 'Energie', () => const EnergyScreen()),
+  _MenuEntry('menu-impact', Icons.eco, 'Impact', () => const ImpactScreen()),
+  _MenuEntry('menu-setari', Icons.settings, 'Setări', () => const SettingsScreen()),
+  _MenuEntry('menu-dispozitive', Icons.devices_other_rounded, 'Dispozitive', () => const DevicesScreen()),
+  _MenuEntry('menu-statistici', Icons.bar_chart_rounded, 'Statistici', () => const StatisticsScreen()),
+  _MenuEntry('menu-trading', Icons.swap_horiz_rounded, 'Trading P2P', () => const TradingScreen()),
+  _MenuEntry('menu-contact', Icons.contact_support_rounded, 'Contact', () => const ContactScreen()),
 ];
 
 class OverlayBottomMenu extends StatefulWidget {
   const OverlayBottomMenu({super.key});
+
+  static const double minHeight = 60;
+
+  /// Height of the collapsed sheet: thin, but the handle stays above the home indicator.
+  static double collapsedHeight(double bottomInset) => math.max(minHeight, 30 + bottomInset);
 
   @override
   State<OverlayBottomMenu> createState() => _OverlayBottomMenuState();
@@ -40,7 +47,7 @@ class _OverlayBottomMenuState extends State<OverlayBottomMenu> with SingleTicker
   late Animation<double> _animation;
 
   double _dragExtent = 0;
-  final double _minHeight = 60;
+  final double _minHeight = OverlayBottomMenu.minHeight;
   final double _maxHeight = 420;
 
   bool get _isExpanded => _animation.value > 0.5;
@@ -99,82 +106,101 @@ class _OverlayBottomMenuState extends State<OverlayBottomMenu> with SingleTicker
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
-        final height = _minHeight + (_maxHeight - _minHeight) * _animation.value;
+        // the sheet reaches the screen edge; collapsed it only grows enough to keep the handle
+        // above the home indicator, expanded its items get the full inset
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
+        final collapsed = OverlayBottomMenu.collapsedHeight(bottomInset);
+        final expanded = _maxHeight + bottomInset;
+        final height = collapsed + (expanded - collapsed) * _animation.value;
 
-        return GestureDetector(
-          onVerticalDragStart: _handleDragStart,
-          onVerticalDragUpdate: _handleDragUpdate,
-          onVerticalDragEnd: _handleDragEnd,
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-              child: Container(
-                height: height,
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt.withValues(alpha: 0.85),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                  border: Border(
-                    top: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      width: 1,
-                    ),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 30,
-                      offset: const Offset(0, -10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _toggleMenu,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        child: Center(
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 40,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: _isExpanded ? 0.4 : 0.25),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                        ),
+        return Semantics(
+          container: true,
+          identifier: 'menu-sheet',
+          child: GestureDetector(
+            onVerticalDragStart: _handleDragStart,
+            onVerticalDragUpdate: _handleDragUpdate,
+            onVerticalDragEnd: _handleDragEnd,
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              // collapsed, the sheet covers only the plain background: the blur is invisible there but costs every frame
+              child: BackdropFilter(
+                enabled: _animation.value > 0,
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  height: height,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceAlt.withValues(alpha: 0.85),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                    border: Border(
+                      top: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        width: 1,
                       ),
                     ),
-                    Expanded(
-                      child: IgnorePointer(
-                        ignoring: !_isExpanded,
-                        child: ClipRect(
-                          child: Opacity(
-                            opacity: _animation.value.clamp(0.0, 1.0),
-                            child: SingleChildScrollView(
-                              physics:
-                                  _isExpanded ? const BouncingScrollPhysics() : const NeverScrollableScrollPhysics(),
-                              child: Column(
-                                children: [
-                                  for (final e in _entries)
-                                    TeslaMenuItem(
-                                      icon: e.icon,
-                                      title: e.title,
-                                      onTap: () => _open(e.build),
-                                    ),
-                                  const SizedBox(height: 24),
-                                ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 30,
+                        offset: const Offset(0, -10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Semantics(
+                        container: true,
+                        identifier: 'menu-toggle',
+                        button: true,
+                        expanded: _isExpanded,
+                        label: 'Meniu',
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleMenu,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                width: 40,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: _isExpanded ? 0.4 : 0.25),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      Expanded(
+                        child: IgnorePointer(
+                          ignoring: !_isExpanded,
+                          child: ClipRect(
+                            child: Opacity(
+                              opacity: _animation.value.clamp(0.0, 1.0),
+                              child: SingleChildScrollView(
+                                physics:
+                                    _isExpanded ? const BouncingScrollPhysics() : const NeverScrollableScrollPhysics(),
+                                child: Column(
+                                  children: [
+                                    for (final e in _entries)
+                                      TeslaMenuItem(
+                                        semanticsId: e.id,
+                                        icon: e.icon,
+                                        title: e.title,
+                                        onTap: () => _open(e.build),
+                                      ),
+                                    SizedBox(height: 24 + bottomInset),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -190,9 +216,11 @@ class TeslaMenuItem extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback? onTap;
+  final String? semanticsId;
 
   const TeslaMenuItem({
     super.key,
+    this.semanticsId,
     required this.icon,
     required this.title,
     this.subtitle,
@@ -201,58 +229,65 @@ class TeslaMenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        splashColor: Colors.white.withValues(alpha: 0.08),
-        highlightColor: Colors.white.withValues(alpha: 0.04),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: subtitle != null ? 12 : 16,
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                color: Colors.white.withValues(alpha: 0.9),
-                size: 24,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
+    // button: true keeps the web semantics role fixed while the menu animates open; when the
+    // role changes the web engine recreates the element and drops the identifier.
+    return Semantics(
+      container: true,
+      identifier: semanticsId,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          splashColor: Colors.white.withValues(alpha: 0.08),
+          highlightColor: Colors.white.withValues(alpha: 0.04),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: subtitle != null ? 12 : 16,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  size: 24,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        subtitle!,
+                        title,
                         style: GoogleFonts.inter(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: -0.3,
                         ),
                       ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right,
-                color: Colors.white.withValues(alpha: 0.35),
-                size: 24,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.white.withValues(alpha: 0.35),
+                  size: 24,
+                ),
+              ],
+            ),
           ),
         ),
       ),

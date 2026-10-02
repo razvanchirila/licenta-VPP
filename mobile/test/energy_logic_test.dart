@@ -56,6 +56,19 @@ void main() {
       expect(EnergyPeriod.adjective(EnergyPeriod.week), 'săptămânală');
       expect(EnergyPeriod.adjective('x'), 'zilnică');
     });
+
+    test('week axis uses Romanian weekday names', () {
+      expect(EnergyPeriod.axisLabel(DateTime(2026, 9, 7), EnergyPeriod.week), 'Lun');
+      expect(EnergyPeriod.axisLabel(DateTime(2026, 9, 12), EnergyPeriod.week), 'Sâm');
+      expect(EnergyPeriod.axisLabel(DateTime(2026, 9, 13), EnergyPeriod.week), 'Dum');
+    });
+
+    test('the adjective agrees with "Consum", a masculine noun', () {
+      expect(EnergyPeriod.adjective(EnergyPeriod.day, feminine: false), 'zilnic');
+      expect(EnergyPeriod.adjective(EnergyPeriod.week, feminine: false), 'săptămânal');
+      expect(EnergyPeriod.adjective(EnergyPeriod.month, feminine: false), 'lunar');
+      expect(EnergyPeriod.adjective(EnergyPeriod.month), 'lunară');
+    });
   });
 
   group('EnergyBreakdown', () {

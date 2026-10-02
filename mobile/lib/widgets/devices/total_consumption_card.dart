@@ -36,9 +36,13 @@ class TotalConsumptionCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  formatPowerW(totalWatts),
-                  style: GoogleFonts.inter(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700),
+                Semantics(
+                  container: true,
+                  identifier: 'devices-total',
+                  child: Text(
+                    formatPowerW(totalWatts),
+                    style: GoogleFonts.inter(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ],
             ),

@@ -6,7 +6,7 @@ import 'package:flutter_interface/models/weather_data.dart';
 import 'package:http/http.dart' as http;
 
 /// Key injected with `--dart-define=WEATHER_API_KEY=...`; without it, or on any error,
-/// the result is null and the UI shows "indisponibil" (never fake weather).
+/// the result is null and the UI shows "--°" (never fake weather).
 class WeatherService {
   static const String _apiKey = String.fromEnvironment('WEATHER_API_KEY');
   static const String _baseUrl = 'https://api.weatherapi.com/v1';

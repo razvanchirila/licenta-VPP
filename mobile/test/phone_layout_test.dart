@@ -65,16 +65,18 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
 
-    testWidgets('iPhone: no fake bar, content clears the notch and the home indicator', (tester) async {
+    testWidgets('iPhone: no fake bar, edge to edge, the insets reach the screens via MediaQuery', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       setViewport(tester, phones.last);
 
       await pumpShell(tester);
 
       expect(find.byType(FakeIosStatusBar), findsNothing);
-      final content = tester.getRect(find.byKey(const Key('content')));
-      expect(content.top, phones.last.topInset);
-      expect(content.bottom, phones.last.size.height - phones.last.bottomInset);
+      final content = find.byKey(const Key('content'));
+      expect(tester.getRect(content), Offset.zero & phones.last.size);
+      final padding = MediaQuery.paddingOf(tester.element(content));
+      expect(padding.top, phones.last.topInset + AppShell.statusBarClearance);
+      expect(padding.bottom, phones.last.bottomInset);
       debugDefaultTargetPlatformOverride = null;
     });
   });

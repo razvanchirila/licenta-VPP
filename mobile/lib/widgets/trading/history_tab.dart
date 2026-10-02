@@ -29,7 +29,11 @@ class HistoryTab extends StatelessWidget {
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Text('Nicio tranzacție P2P încă', style: GoogleFonts.inter(color: Colors.white54)),
+                  child: Semantics(
+                    container: true,
+                    identifier: 'trading-history-empty',
+                    child: Text('Nicio tranzacție P2P încă', style: GoogleFonts.inter(color: Colors.white54)),
+                  ),
                 ),
               ),
           ],
@@ -51,63 +55,68 @@ class _TradeTile extends StatelessWidget {
     final color = trade.isRejected ? Colors.white38 : (isSell ? Colors.green : Colors.orange);
     final counterparty = trade.counterpartyHouseId?.toString() ?? '?';
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-              child: Icon(trade.isRejected ? Icons.block : (isSell ? Icons.sell : Icons.shopping_cart),
-                  color: color, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Semantics(
+      container: true,
+      identifier: 'trade-${trade.id}',
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                child: Icon(trade.isRejected ? Icons.block : (isSell ? Icons.sell : Icons.shopping_cart),
+                    color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${isSell ? 'Vândut către casa' : 'Cumpărat de la casa'} $counterparty'
+                      '${trade.isRejected ? ' (respinsă)' : ''}',
+                      style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${trade.energyKwh.toStringAsFixed(3)} kWh @ ${trade.priceLeiKwh.toStringAsFixed(2)} lei/kWh · '
+                      '${formatSimTime(trade.simTimestamp)}',
+                      style: GoogleFonts.inter(color: Colors.white54, fontSize: 11),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '${isSell ? 'Vândut către casa' : 'Cumpărat de la casa'} $counterparty'
-                    '${trade.isRejected ? ' (respinsă)' : ''}',
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    '${isSell ? '+' : '-'}${formatLei(trade.totalValueLei)}',
+                    style: GoogleFonts.inter(
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      decoration: trade.isRejected ? TextDecoration.lineThrough : null,
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${trade.energyKwh.toStringAsFixed(3)} kWh @ ${trade.priceLeiKwh.toStringAsFixed(2)} lei/kWh · '
-                    '${formatSimTime(trade.simTimestamp)}',
-                    style: GoogleFonts.inter(color: Colors.white54, fontSize: 11),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  '${isSell ? '+' : '-'}${formatLei(trade.totalValueLei)}',
-                  style: GoogleFonts.inter(
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                    decoration: trade.isRejected ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: Colors.white24, size: 16),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -125,7 +134,7 @@ void showTradeDetails(BuildContext context, Trade trade) {
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (context) => Container(
-      padding: const EdgeInsets.all(24),
+      padding: AppTheme.sheetPadding(context, 24),
       decoration: AppTheme.sheetDecoration(),
       child: SingleChildScrollView(
           child: Column(

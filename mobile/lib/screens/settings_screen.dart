@@ -84,7 +84,10 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, style: GoogleFonts.inter(color: Colors.white)),
+        content: Semantics(
+            container: true,
+            identifier: 'snackbar',
+            child: Text(message, style: GoogleFonts.inter(color: Colors.white))),
         backgroundColor: isError ? AppColors.red : AppColors.green,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -189,6 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
   }) {
     final isSelected = _selectedMode == mode;
     return OperatingModeCard(
+      semanticsId: 'settings-mode-${mode.toLowerCase()}',
       title: title,
       subtitle: subtitle,
       description: description,

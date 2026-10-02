@@ -6,6 +6,7 @@ import 'package:flutter_interface/models/consumption_stats.dart';
 import 'package:flutter_interface/models/sim_prices.dart';
 import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
+import 'package:flutter_interface/widgets/common/screen_header.dart';
 import 'package:flutter_interface/widgets/error_state.dart';
 import 'package:flutter_interface/widgets/statistics/comparison_card.dart';
 import 'package:flutter_interface/widgets/statistics/consumption_chart_card.dart';
@@ -66,24 +67,27 @@ class _StatisticsScreenState extends State<StatisticsScreen> with AsyncLoader<St
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        leading: const BackNavButton(),
         title: const Text('Statistici consum'),
         backgroundColor: AppColors.surface,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: state.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (message) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: StatsPeriodSelector(selected: _period, onChanged: _changePeriod),
+      body: SafeArea(
+          top: false,
+          child: state.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (message) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: StatsPeriodSelector(selected: _period, onChanged: _changePeriod),
+                ),
+                Expanded(child: ErrorState(message: message, onRetry: _loadStatistics, accent: AppColors.blue)),
+              ],
             ),
-            Expanded(child: ErrorState(message: message, onRetry: _loadStatistics, accent: AppColors.blue)),
-          ],
-        ),
-        data: _buildContent,
-      ),
+            data: _buildContent,
+          )),
     );
   }
 

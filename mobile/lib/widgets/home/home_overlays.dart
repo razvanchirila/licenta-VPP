@@ -13,16 +13,20 @@ class SimTimeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = time;
     if (t == null) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Text(
-        'Simulare ${formatDayMonth(t)} ${formatClock(t)}',
-        style: GoogleFonts.inter(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w500),
+    return Semantics(
+      container: true,
+      identifier: 'home-sim-clock',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Text(
+          'Simulare ${formatDayMonth(t)} ${formatClock(t)}',
+          style: GoogleFonts.inter(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w500),
+        ),
       ),
     );
   }
@@ -68,17 +72,23 @@ class SolarForecastButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: AppColors.amber.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppColors.amber.withValues(alpha: 0.4), width: 1),
+    return Semantics(
+      container: true,
+      identifier: 'home-solar-forecast',
+      button: true,
+      label: 'Prognoză solară',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.amber.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.amber.withValues(alpha: 0.4), width: 1),
+          ),
+          child: const Icon(Icons.wb_sunny_rounded, color: AppColors.amber, size: 22),
         ),
-        child: const Icon(Icons.wb_sunny_rounded, color: AppColors.amber, size: 22),
       ),
     );
   }
@@ -91,7 +101,7 @@ void showProfileMenu(BuildContext context,
     backgroundColor: Colors.transparent,
     builder: (context) => Container(
       decoration: AppTheme.sheetDecoration(color: AppColors.surfaceMenu),
-      padding: const EdgeInsets.all(20),
+      padding: AppTheme.sheetPadding(context, 20),
       child: Material(
         type: MaterialType.transparency,
         child: Column(
@@ -99,18 +109,26 @@ void showProfileMenu(BuildContext context,
           children: [
             SheetHandle(color: Colors.grey.shade600),
             const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.person_rounded, color: Colors.white70),
-              title: Text(username, style: const TextStyle(color: Colors.white)),
-              subtitle: Text(houseName, style: const TextStyle(color: Colors.white54)),
+            Semantics(
+              container: true,
+              identifier: 'profile-user',
+              child: ListTile(
+                leading: const Icon(Icons.person_rounded, color: Colors.white70),
+                title: Text(username, style: const TextStyle(color: Colors.white)),
+                subtitle: Text(houseName, style: const TextStyle(color: Colors.white54)),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Deconectare', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                onLogout();
-              },
+            Semantics(
+              container: true,
+              identifier: 'profile-logout',
+              child: ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text('Deconectare', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  onLogout();
+                },
+              ),
             ),
           ],
         ),

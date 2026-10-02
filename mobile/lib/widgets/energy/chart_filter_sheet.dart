@@ -23,7 +23,7 @@ Future<void> showChartFilterSheet(
         }
 
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: AppTheme.sheetPadding(context, 20),
           decoration: AppTheme.sheetDecoration(),
           child: SingleChildScrollView(
             child: Column(
