@@ -11,9 +11,10 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from vpp_core import data_sources as ds
+from vpp_core.forecast import HISTORY_DAYS
 from vpp_core.optimizer import LPWeights
 from vpp_core.params import CommunityParams, default_community
-from vpp_core.scenario import Scenario, generate_scenario
+from vpp_core.scenario import Scenario, generate_scenario, split_past
 from vpp_core.scenario_real import generate_scenario_real
 
 RESULTS_DIR = Path(__file__).resolve().parents[2] / "results"
@@ -33,7 +34,7 @@ SEASON_STARTS_REAL = {"iarna": date(2023, 1, 10), "primavara": date(2023, 4, 10)
 
 COLORS = {
     "fara_baterie": "#2a78d6", "baterie_locala": "#eb6834", "vpp_reguli": "#1baf7a",
-    "mpc": "#eda100", "mpc_varf": "#e87ba4", "optim_lp": "#008300",
+    "mpc": "#eda100", "mpc_varf": "#e87ba4", "mpc_ideal": "#8a6bd1", "optim_lp": "#008300",
 }
 # controller name (code, CSV) -> what the reader sees; all are control strategies on the same neighbourhood
 LABELS = {
@@ -44,6 +45,7 @@ LABELS = {
     "vpp_reguli_spec_alpha": "VPP cu reguli (α din specificație)",
     "mpc": "VPP optimizat (MPC)",
     "mpc_varf": "VPP optimizat (MPC) + taxă de vârf",
+    "mpc_ideal": "MPC cu prognoză aproape perfectă",
     "optim_lp": "optim teoretic (LP, prognoză perfectă)",
 }
 SHORT_LABELS = {
@@ -51,6 +53,7 @@ SHORT_LABELS = {
     "fara_baterie": "doar PV",
     "vpp_reguli_spec_alpha": "VPP cu reguli (α)",
     "mpc_varf": "MPC + taxă de vârf",
+    "mpc_ideal": "MPC, prognoză aproape perfectă",
     "optim_lp": "optim teoretic",
 }
 INK, MUTED, GRID = "#0b0b0b", "#898781", "#e1e0d9"
@@ -69,14 +72,18 @@ def seasons_with_prices(price_year: int, n_days: int) -> tuple[str, ...]:
 
 def make_scenario(
     season: str, seed: int, n_days: int, dt_h: float, real: bool, community: CommunityParams | None = None,
-    price_year: int = ds.DEFAULT_PRICE_YEAR,
+    price_year: int = ds.DEFAULT_PRICE_YEAR, history_days: int = HISTORY_DAYS,
 ) -> Scenario:
+    """The season's week, generated together with the `history_days` before it, which become scenario.past."""
     community = default_community() if community is None else community
+    start = SEASON_STARTS_REAL[season] if real else next(s for k, _, s in SEASONS if k == season)
+    first = start - timedelta(days=history_days)
     if real:
-        return generate_scenario_real(community, start=SEASON_STARTS_REAL[season], n_days=n_days, dt_h=dt_h, seed=seed,
+        full = generate_scenario_real(community, start=first, n_days=n_days + history_days, dt_h=dt_h, seed=seed,
                                       price_year=price_year)
-    start = next(s for k, _, s in SEASONS if k == season)
-    return generate_scenario(community, start=start, n_days=n_days, dt_h=dt_h, seed=seed)
+    else:
+        full = generate_scenario(community, start=first, n_days=n_days + history_days, dt_h=dt_h, seed=seed)
+    return split_past(full, history_days)
 
 
 def weights(deg_cost: float | None = None, **overrides) -> LPWeights:

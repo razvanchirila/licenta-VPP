@@ -1,10 +1,9 @@
-import warnings
-
 import numpy as np
 import pytest
 
 from vpp_core import load_model as lm
 from vpp_core import sensitivity as sens
+from vpp_core.forecast import HISTORY_DAYS
 from vpp_core.params import MODULE_PROBABILITIES, PV_KWP_CHOICES, deye_se_f16, random_community
 from vpp_core.reporting import make_scenario
 
@@ -36,18 +35,8 @@ def test_random_community_battery_share_and_modes():
     assert {h.mode for h in c.houses} == {"Eco", "Profit"}
 
 
-def test_random_community_profiles_come_from_the_appliance_list():
-    ids = sorted(lm.by_house(lm.load_appliances()))
-    c = random_community(200, seed=0)
-    drawn = [h.profile_id for h in c.houses]
-    assert set(drawn) == set(ids)                        # 200 draws reach all 10 templates
-    assert min(np.bincount(drawn)[1:]) >= 8
-    assert [h.profile_id for h in random_community(200, seed=1).houses] != drawn
-    assert {h.profile_id for h in random_community(50, seed=0, profile_ids=(3, 7)).houses} == {3, 7}
-
-
-def test_random_community_pv_and_batteries_do_not_depend_on_the_profiles():
-    """The profile ids are drawn after everything else, so the communities of the older scale studies are kept."""
+def test_random_community_draws_pv_battery_and_mode_per_house():
+    """The draw order of the older scale studies, so their communities are kept."""
     rng = np.random.default_rng(5)
     expected = []
     for _ in range(12):
@@ -55,18 +44,16 @@ def test_random_community_pv_and_batteries_do_not_depend_on_the_profiles():
         expected.append((float(rng.choice(PV_KWP_CHOICES)), deye_se_f16(modules), rng.random() < 0.5))
     c = random_community(12, seed=5)
     assert [(h.pv_kwp, h.battery, h.mode == "Eco") for h in c.houses] == expected
-    other = random_community(12, seed=5, profile_ids=(1,))
-    assert [(h.pv_kwp, h.battery, h.mode) for h in other.houses] == [(h.pv_kwp, h.battery, h.mode) for h in c.houses]
 
 
 def test_scale_scenario_uses_device_load_for_every_house():
     community = random_community(40, seed=2)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")                   # no "case lipsesc" fallback warning
-        scenario = make_scenario("iarna", 2, 1, 0.5, False, community)
-    crit, flex = lm.community_load(community, lm.DISPOZITIVE_CSV, scenario.start, 1, 0.5, 2)
-    np.testing.assert_array_equal(scenario.load_crit_kw, crit)
-    np.testing.assert_array_equal(scenario.load_flex_kw, flex)
+    scenario = make_scenario("iarna", 2, 1, 0.5, False, community)
+    days = HISTORY_DAYS + 1                              # the week is generated with its meter history in front
+    crit, flex = lm.community_load(community, scenario.past.start, days, 0.5, 2)
+    np.testing.assert_array_equal(scenario.load_crit_kw, crit[:, -48:])
+    np.testing.assert_array_equal(scenario.load_flex_kw, flex[:, -48:])
+    np.testing.assert_array_equal(scenario.past.load_flex_kw, flex[:, :-48])
 
 
 def test_random_community_rejects_empty():
@@ -89,12 +76,16 @@ def test_study_rows_have_expected_keys_and_chart_renders(name, tmp_path):
     assert (tmp_path / f"{name}.png").stat().st_size > 0
 
 
-def test_forecast_study_has_mpc_levels_and_references():
+def test_forecast_study_has_every_variant_and_references():
     rows = sens.run_study("forecast", TINY)
-    mpc_levels = {r["pv_error"] for r in rows if r["controller"] == "mpc"}
-    assert mpc_levels == {pv for pv, _ in sens.FORECAST_ERRORS}
-    assert {r["controller"] for r in rows} == {"mpc", "optim_lp", "vpp_reguli"}
-    assert len(rows) == len(sens.TWO_SEASONS) * (len(sens.FORECAST_ERRORS) + 2)
+    assert {r["variant"] for r in rows if r["controller"] in ("mpc", "mpc_ideal")} == set(sens.FORECAST_VARIANTS)
+    assert {r["controller"] for r in rows if r["variant"] == "zgomot"} == {"mpc_ideal"}
+    assert {r["controller"] for r in rows} == {"mpc", "mpc_ideal", "optim_lp", "vpp_reguli"}
+    assert len(rows) == len(sens.TWO_SEASONS) * (len(sens.FORECAST_VARIANTS) + 2)
+    lp = {r["season"]: r["cost_lei"] for r in rows if r["controller"] == "optim_lp"}
+    perfect = {r["season"]: r["cost_lei"] for r in rows if r["variant"] == "perfecta"}
+    for season in sens.TWO_SEASONS:                 # 1 day, horizon 24 h: the perfect-forecast MPC is the LP
+        assert perfect[season] == pytest.approx(lp[season], abs=0.5)
 
 
 def test_deg_study_throughput_and_cycles():

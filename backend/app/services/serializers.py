@@ -12,6 +12,7 @@ from app.db.models import (
     WalletModel,
     WalletTransactionModel,
 )
+from vpp_core.load_model import describe_intervals, parse_intervals
 
 
 def user_dict(u: UserModel) -> dict:
@@ -29,7 +30,8 @@ def device_dict(d: DeviceModel) -> dict:
     schedule = None
     if d.mode:
         schedule = {"mode": d.mode, "hours_per_day": d.hours_per_day, "cycles_per_week": d.cycles_per_week,
-                    "cycle_minutes": d.cycle_minutes, "interval": d.interval, "season": d.season}
+                    "cycle_minutes": d.cycle_minutes, "interval": describe_intervals(parse_intervals(d.interval)),
+                    "season": d.season}
     return {
         "id": d.id,
         "house_id": d.house_id,

@@ -1,11 +1,14 @@
 @echo off
 REM Reface toate tabelele si graficele din results\ : sintetic, date reale cu preturi 2023 / 2025 / 2026,
 REM sensibilitate, consum, comparatia pe ani. Dureaza cam o ora si foloseste toate nucleele.
-REM Se ruleaza dupa ce se schimba backend\data\dispozitive.csv sau modelul.
+REM Se ruleaza dupa ce se schimba backend\data\dispozitive.csv, gospodarii.csv sau modelul.
+REM Optional numarul de procese in paralel: run_results.bat 12 (cu multe nuclee si memorie putina).
 setlocal enabledelayedexpansion
 cd /d "%~dp0..\backend"
 set PY=..\.venv\Scripts\python.exe
-set COMUN=--seeds 5 --days 7 --dt 0.25
+set PROCESE=
+if not "%~1"=="" set "PROCESE=--workers %~1"
+set COMUN=--seeds 5 --days 7 --dt 0.25 %PROCESE%
 set N=0
 call :acum T0
 
@@ -18,9 +21,9 @@ for %%a in (2023 2025 2026) do (
     call :pas -m vpp_core.evaluation --real --price-year %%a %COMUN% || goto :esec
 )
 set "PAS=pareto, sintetic"
-call :pas -m vpp_core.pareto --seeds 3 --days 7 --dt 0.25 || goto :esec
+call :pas -m vpp_core.pareto --seeds 3 --days 7 --dt 0.25 %PROCESE% || goto :esec
 set "PAS=pareto, date reale 2025"
-call :pas -m vpp_core.pareto --real --price-year 2025 --seeds 3 --days 7 --dt 0.25 || goto :esec
+call :pas -m vpp_core.pareto --real --price-year 2025 --seeds 3 --days 7 --dt 0.25 %PROCESE% || goto :esec
 set "PAS=factura pe casa, sintetic"
 call :pas -m vpp_core.houses_report %COMUN% || goto :esec
 for %%a in (2023 2025 2026) do (
@@ -29,13 +32,13 @@ for %%a in (2023 2025 2026) do (
 )
 for %%s in (forecast deg p2p) do (
     set "PAS=sensibilitate %%s, sintetic"
-    call :pas -m vpp_core.sensitivity --study %%s --seeds 3 --days 7 --dt 0.25 || goto :esec
+    call :pas -m vpp_core.sensitivity --study %%s --seeds 3 --days 7 --dt 0.25 %PROCESE% || goto :esec
 )
 set "PAS=sensibilitate scale, sintetic, 2 zile"
-call :pas -m vpp_core.sensitivity --study scale --seeds 3 --days 2 --dt 0.25 || goto :esec
+call :pas -m vpp_core.sensitivity --study scale --seeds 3 --days 2 --dt 0.25 %PROCESE% || goto :esec
 for %%s in (forecast deg p2p) do (
     set "PAS=sensibilitate %%s, date reale 2025"
-    call :pas -m vpp_core.sensitivity --real --price-year 2025 --study %%s --seeds 3 --days 7 --dt 0.25 || goto :esec
+    call :pas -m vpp_core.sensitivity --real --price-year 2025 --study %%s --seeds 3 --days 7 --dt 0.25 %PROCESE% || goto :esec
 )
 set "PAS=consum din dispozitive"
 call :pas -m vpp_core.load_model || goto :esec

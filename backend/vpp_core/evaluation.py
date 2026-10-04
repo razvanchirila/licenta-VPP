@@ -1,5 +1,5 @@
 """
-Full evaluation: 4 seasons x N seeds x 6 strategies; tables and charts in results/.
+Full evaluation: 4 seasons x N seeds x 7 strategies; tables and charts in results/.
 
 Run from backend/:   python -m vpp_core.evaluation [--seeds 5] [--days 7] [--dt 0.25] [--deg 0.45]
                                                     [--real [--price-year 2023|2025|2026]]
@@ -15,7 +15,7 @@ import numpy as np
 from vpp_core import data_sources as ds
 from vpp_core.controllers import Controller, RuleBasedController
 from vpp_core.metrics import compute_metrics
-from vpp_core.optimizer import LPController, MPCController
+from vpp_core.optimizer import LPController, MPCController, RealisticMPCController
 from vpp_core.params import default_community
 from vpp_core.reporting import (
     COLORS,
@@ -38,7 +38,7 @@ from vpp_core.reporting import (
 )
 from vpp_core.simulator import simulate
 
-CONTROLLERS = ("fara_baterie", "baterie_locala", "vpp_reguli", "mpc", "mpc_varf", "optim_lp")
+CONTROLLERS = ("fara_baterie", "baterie_locala", "vpp_reguli", "mpc", "mpc_varf", "mpc_ideal", "optim_lp")
 TS_CONTROLLERS = ("vpp_reguli", "mpc")   # the two columns of the time-series plot
 
 # lei/kW of weekly peak import for "mpc_varf": ~3 kWh at the dearest hour per extra kW,
@@ -61,9 +61,11 @@ def make_controller(name: str, seed: int, deg_cost: float | None = None) -> Cont
     if name == "vpp_reguli":
         return RuleBasedController(apply_alpha=False, name=name)
     if name == "mpc":
-        return MPCController(seed=seed, weights=weights(deg_cost), name=name)
+        return RealisticMPCController(weights=weights(deg_cost), name=name)
     if name == "mpc_varf":
-        return MPCController(seed=seed, weights=weights(deg_cost, peak_cost=PEAK_COST), name=name)
+        return RealisticMPCController(weights=weights(deg_cost, peak_cost=PEAK_COST), name=name)
+    if name == "mpc_ideal":
+        return MPCController(seed=seed, weights=weights(deg_cost), name=name)
     if name == "optim_lp":
         return LPController(weights=weights(deg_cost), name=name)
     raise ValueError(f"unknown controller {name!r}")
@@ -98,7 +100,7 @@ def run_all(n_seeds: int, n_days: int, dt_h: float, workers: int | None,
     seasons = tuple(key for key, _, _ in SEASONS) if seasons is None else seasons
     tasks = [
         (season, seed, controller, n_days, dt_h, real, deg_cost, price_year)
-        for controller in ("mpc", "mpc_varf", "optim_lp", "vpp_reguli", "baterie_locala", "fara_baterie")
+        for controller in ("mpc", "mpc_varf", "mpc_ideal", "optim_lp", "vpp_reguli", "baterie_locala", "fara_baterie")
         for season in seasons
         for seed in range(n_seeds)
     ]
