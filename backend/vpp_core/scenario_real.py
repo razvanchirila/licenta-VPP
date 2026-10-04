@@ -3,7 +3,8 @@ Scenario from real data (PVGIS, PZU via data_sources.py); sources in backend/dat
 PV and the calendar (weekdays, holidays, seasons of the load) are those of 2023; the PZU prices are taken
 from `price_year` at the same month, day and hour. The tariff components below are the 2026 ones for every
 price year.
-Load: the appliance list (load_source="dispozitive", backend/data/dispozitive.csv, see load_model.py) or the
+Load: the appliances of each house (load_source="dispozitive", catalog backend/data/dispozitive.csv, see
+load_model.py) or the
 DEER statistical profile scaled to an annual consumption ("deer").
 
     import  = (PZU + SUPPLY_MARGIN + NETWORK_ADDER) x (1 + VAT)
@@ -177,14 +178,14 @@ def generate_scenario_real(
     season = _season(doy)
 
     pv = _pv_from_pvgis(community, first_day, n_days, dt_h, spd, rng)
-    critical, flexible = _load_from_deer(
-        community.n_houses, days, dt_h, spd, season, annual_kwh_lo, annual_kwh_hi, rng
-    )
     if load_source == "dispozitive":
-        from vpp_core.load_model import DISPOZITIVE_CSV, community_load  # here, so `-m vpp_core.load_model` runs clean
+        from vpp_core.load_model import community_load  # here, so `-m vpp_core.load_model` runs clean
 
-        critical, flexible = community_load(community, DISPOZITIVE_CSV, start, n_days, dt_h, seed,
-                                            fallback=(critical, flexible))
+        critical, flexible = community_load(community, start, n_days, dt_h, seed)
+    else:
+        critical, flexible = _load_from_deer(
+            community.n_houses, days, dt_h, spd, season, annual_kwh_lo, annual_kwh_hi, rng
+        )
     price_import, price_export, price_p2p = _prices_from_pzu(
         start, n_days, dt_h, p2p_price_factor, export_rule, price_year
     )

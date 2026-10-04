@@ -1,14 +1,15 @@
 """Quick comparison of all strategies on a summer and a winter week:  python -m vpp_core.experiments"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from vpp_core.controllers import RuleBasedController
+from vpp_core.forecast import HISTORY_DAYS
 from vpp_core.metrics import compute_metrics
-from vpp_core.optimizer import LPController, MPCController
+from vpp_core.optimizer import LPController, MPCController, RealisticMPCController
 from vpp_core.params import default_community
 from vpp_core.reporting import LABELS, utf8_console
-from vpp_core.scenario import generate_scenario
+from vpp_core.scenario import generate_scenario, split_past
 from vpp_core.simulator import simulate
 
 
@@ -40,9 +41,11 @@ def main() -> None:
     utf8_console()
     community = default_community()
     for label, start in (("Vara (iunie)", date(2025, 6, 1)), ("Iarna (ianuarie)", date(2025, 1, 10))):
-        scenario = generate_scenario(community, start=start, n_days=7, dt_h=0.25, seed=42)
+        full = generate_scenario(community, start=start - timedelta(days=HISTORY_DAYS), n_days=7 + HISTORY_DAYS,
+                                 dt_h=0.25, seed=42)
+        scenario = split_past(full, HISTORY_DAYS)
         print(f"\n{label}: 7 zile, 10 case, pas 15 min, seed 42")
-        controllers = baseline_controllers() + [MPCController(), LPController()]
+        controllers = baseline_controllers() + [RealisticMPCController(), MPCController(), LPController()]
         rows = [compute_metrics(simulate(community, scenario, controller))["community"] for controller in controllers]
         print_table(rows)
 

@@ -1,5 +1,5 @@
 """
-Per-house, per-month view of the evaluation: 4 seasons x N seeds x 5 strategies, one row per house.
+Per-house, per-month view of the evaluation: 4 seasons x N seeds x 6 strategies, one row per house.
 
 Run from backend/:   python -m vpp_core.houses_report [--seeds 5] [--days 7] [--dt 0.25]
                                                        [--real [--price-year 2023|2025|2026]]
@@ -40,7 +40,7 @@ from vpp_core.reporting import (
 )
 from vpp_core.simulator import simulate
 
-CONTROLLERS = ("fara_baterie", "baterie_locala", "vpp_reguli", "mpc", "optim_lp")
+CONTROLLERS = ("fara_baterie", "baterie_locala", "vpp_reguli", "mpc", "mpc_ideal", "optim_lp")
 MONTH_DAYS = 30
 CHART_SEASONS = ("iarna", "vara")
 

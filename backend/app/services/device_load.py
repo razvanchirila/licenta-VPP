@@ -1,6 +1,7 @@
 """
-A house consumes what its switched-on devices consume. Devices seeded from dispozitive.csv (mode set)
-follow the schedule vpp_core.load_model draws for each day; devices added by hand draw power_w while on.
+A house consumes what its switched-on devices consume. Devices seeded from the composition load_model
+generates for the house (mode set, per-person values already multiplied) follow the schedule
+vpp_core.load_model draws for each day; devices added by hand draw power_w while on.
 Schedules are drawn in device order from house_rng(seed + ordinal(day), house_id), the same stream
 generate_scenario uses for that day, so a house with its seeded devices consumes exactly what the
 scenario generators would give it.
@@ -12,15 +13,14 @@ from datetime import date
 import numpy as np
 
 from app.db.models import DeviceModel, HouseModel
-from vpp_core.load_model import Appliance, appliance_profile, house_rng, parse_interval
+from vpp_core.load_model import Appliance, appliance_profile, house_rng, parse_intervals
 
 
 def appliance_of(device: DeviceModel) -> Appliance:
     return Appliance(
-        casa=device.house_id, dispozitiv=device.name, putere_w=device.power_w, mod=device.mode,
-        ore_pe_zi=device.hours_per_day, cicluri_pe_saptamana=device.cycles_per_week,
-        durata_ciclu_min=device.cycle_minutes, interval=parse_interval(device.interval), sezon=device.season,
-        flexibil=not device.critical,
+        dispozitiv=device.name, putere_w=device.power_w, mod=device.mode, ore_pe_zi=device.hours_per_day,
+        cicluri_pe_saptamana=device.cycles_per_week, durata_ciclu_min=device.cycle_minutes,
+        intervale=parse_intervals(device.interval), sezon=device.season, flexibil=not device.critical,
     )
 
 

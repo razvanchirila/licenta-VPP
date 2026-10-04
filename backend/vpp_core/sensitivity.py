@@ -1,5 +1,6 @@
 """
-Sensitivity studies: forecast error (MPC), battery wear cost, P2P on/off, community size.
+Sensitivity studies: where the MPC loses against perfect foresight (forecast parts), battery wear cost,
+P2P on/off, community size.
 
 Run from backend/:   python -m vpp_core.sensitivity [--seeds 3] [--days 7] [--dt 0.25]
                                                      [--real [--price-year 2023|2025|2026]]
@@ -19,8 +20,9 @@ import numpy as np
 
 from vpp_core import data_sources as ds
 from vpp_core.controllers import Controller, RuleBasedController
+from vpp_core.forecast import PARTS, LoadForecaster, RealisticForecaster
 from vpp_core.metrics import compute_metrics
-from vpp_core.optimizer import LPController, MPCController
+from vpp_core.optimizer import LPController, MPCController, RealisticMPCController
 from vpp_core.params import CommunityParams, default_community, random_community
 from vpp_core.reporting import (
     COLORS,
@@ -43,7 +45,19 @@ from vpp_core.reporting import (
 )
 from vpp_core.simulator import simulate
 
-FORECAST_ERRORS = ((0.0, 0.0), (0.1, 0.07), (0.3, 0.2), (0.5, 0.33))   # (pv, load) relative std at 24 h, load = 2/3 pv
+FORECAST_VARIANTS = {   # key -> chart label; each is VPP optimizat (MPC) with one change
+    "perfecta": "prognoză perfectă (rămâne orizontul de 24 h)",
+    "zgomot": "prognoză aproape perfectă (viitorul real + zgomot)",
+    "doar_pret": "doar prețurile prognozate, PV și consum exacte",
+    "doar_pv": "doar PV prognozat",
+    "doar_consum": "doar consumul prognozat",
+    "realist": "toate prognozate (VPP optimizat, MPC)",
+    "fara_pzu_maine": "fără prețurile PZU publicate pentru mâine",
+    "fara_istoric": "fără istoricul de dinainte de săptămână",
+    "n1": "consum din ultima zi de același tip (N = 1)",
+    "fara_intarziere": "fără întârziere (vede pasul curent)",
+    "baterie_fixa": "bateria ține planul, rețeaua preia eroarea",
+}
 DEG_COSTS = (0.0, 0.05, 0.12, 0.20, 0.30, 0.45)                         # lei/kWh of battery throughput
 DEG_DEYE = {0.12: "SE-F16 din cicluri", 0.20: "SE-F16 din garanție (valoarea folosită)"}
 SCALE_SIZES = (10, 20, 40, 80, 100, 200)
@@ -67,12 +81,11 @@ class Settings:
     seasons: tuple[str, ...] = tuple(key for key, _, _ in SEASONS)   # the P2P study runs on all of them
 
 
-def make_controller(name: str, seed: int, deg_cost: float | None = None,
-                    pv_error: float = 0.3, load_error: float = 0.2) -> Controller:
+def make_controller(name: str, seed: int, deg_cost: float | None = None) -> Controller:
     if name == "vpp_reguli":
         return RuleBasedController(apply_alpha=False, name=name)
     if name == "mpc":
-        return MPCController(seed=seed, weights=weights(deg_cost), pv_error=pv_error, load_error=load_error, name=name)
+        return RealisticMPCController(weights=weights(deg_cost), name=name)
     if name == "optim_lp":
         return LPController(weights=weights(deg_cost), name=name)
     raise ValueError(f"unknown controller {name!r}")
@@ -105,7 +118,7 @@ def _row(task: dict, metrics: dict) -> dict:
 
 def _describe(row: dict) -> str:
     fields = " ".join(f"{k}={v}" for k, v in row.items()
-                      if k in ("season", "seed", "controller", "pv_error", "deg_cost", "p2p", "n_houses"))
+                      if k in ("season", "seed", "controller", "variant", "deg_cost", "p2p", "n_houses"))
     return f"{fields:<55} cost {row['cost_lei']:8.1f} lei  ({row['wall_s']:.1f} s)"
 
 
@@ -124,61 +137,91 @@ def _series(rows: list[dict], metric: str, xs, key: str, **filters) -> tuple[lis
     return [m for m, _ in stats], [sd for _, sd in stats]
 
 
-# --- 1. forecast error ---------------------------------------------------------------------------------------
+# --- 1. forecast parts ---------------------------------------------------------------------------------------
+
+def forecast_controller(variant: str, seed: int, deg_cost: float | None = None) -> Controller:
+    """One MPC of the study: VPP optimizat (MPC) with one thing changed; "zgomot" is the near-perfect MPC."""
+    if variant == "zgomot":
+        return MPCController(seed=seed, weights=weights(deg_cost), name="mpc_ideal")
+    if variant == "baterie_fixa":
+        return RealisticMPCController(weights=weights(deg_cost), realisation="battery", name="mpc")
+    options = {
+        "perfecta": {"perfect": PARTS},
+        "doar_pret": {"perfect": ("pv", "load")},
+        "doar_pv": {"perfect": ("load", "price")},
+        "doar_consum": {"perfect": ("pv", "price")},
+        "realist": {},
+        "fara_pzu_maine": {"day_ahead": False},
+        "fara_istoric": {"use_past": False},
+        "n1": {"load": LoadForecaster(n_days=1)},
+        "fara_intarziere": {"delay_steps": 0},
+    }[variant]
+    return RealisticMPCController(weights=weights(deg_cost), forecaster=RealisticForecaster(**options), name="mpc")
+
+
+def _variant_order(row: dict) -> int:
+    references = ("optim_lp", "vpp_reguli")
+    if row["controller"] in references:
+        return references.index(row["controller"]) - len(references)
+    return list(FORECAST_VARIANTS).index(row["variant"])
+
 
 def forecast_tasks(s: Settings) -> list[dict]:
     tasks = []
     for season in TWO_SEASONS:
         for seed in range(s.n_seeds):
-            tasks += [{"settings": s, "season": season, "seed": seed, "controller": "mpc",
-                       "pv_error": pv, "load_error": load} for pv, load in FORECAST_ERRORS]
-            tasks += [{"settings": s, "season": season, "seed": seed, "controller": name,
-                       "pv_error": None, "load_error": None} for name in ("optim_lp", "vpp_reguli")]
+            tasks += [{"settings": s, "season": season, "seed": seed, "controller": "mpc", "variant": variant}
+                      for variant in FORECAST_VARIANTS]
+            tasks += [{"settings": s, "season": season, "seed": seed, "controller": name, "variant": ""}
+                      for name in ("optim_lp", "vpp_reguli")]
     return tasks
 
 
 def forecast_run_one(task: dict) -> dict:
     s = task["settings"]
-    errors = {} if task["pv_error"] is None else {"pv_error": task["pv_error"], "load_error": task["load_error"]}
-    controller = make_controller(task["controller"], task["seed"], s.deg_cost, **errors)
-    return _row(task, run_and_measure(default_community(), task["season"], task["seed"], controller, s))
+    if task["variant"]:
+        controller = forecast_controller(task["variant"], task["seed"], s.deg_cost)
+    else:
+        controller = make_controller(task["controller"], task["seed"], s.deg_cost)
+    row = _row(task, run_and_measure(default_community(), task["season"], task["seed"], controller, s))
+    row["controller"] = controller.name
+    return row
 
 
-def _extra_vs_lp(rows: list[dict], season: str, controller: str, pv_error: float | None) -> tuple[float, float]:
-    """Cost above the perfect-foresight LP of the same seed (the seed spread is ~100 lei, the effect a few lei)."""
+def _extra_vs_lp(rows: list[dict], season: str, **filters) -> tuple[float, float]:
+    """Cost above the perfect-foresight LP of the same seed (the seed spread is ~100 lei, the effect much less)."""
     diffs = []
     for seed in sorted({r["seed"] for r in rows}):
         lp = _select(rows, season=season, seed=seed, controller="optim_lp")[0]["cost_lei"]
-        run = _select(rows, season=season, seed=seed, controller=controller, pv_error=pv_error)[0]
-        diffs.append(run["cost_lei"] - lp)
+        diffs.append(_select(rows, season=season, seed=seed, **filters)[0]["cost_lei"] - lp)
     return float(np.mean(diffs)), float(np.std(diffs, ddof=1)) if len(diffs) > 1 else 0.0
 
 
 def forecast_chart(rows: list[dict], s: Settings, path: Path) -> None:
     plt = plot_style()
-    fig, axes = plt.subplots(1, 2, figsize=(8, 3.6))
-    x = [100 * pv for pv, _ in FORECAST_ERRORS]
+    variants = list(FORECAST_VARIANTS)
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.6), sharey=True)
+    y = np.arange(len(variants))[::-1]
+    colors = [COLORS["mpc"] if v == "realist" else COLORS["mpc_ideal"] if v == "zgomot"
+              else COLORS["optim_lp"] if v == "perfecta" else MUTED for v in variants]
     for ax, season in zip(axes, TWO_SEASONS, strict=True):
-        stats = [_extra_vs_lp(rows, season, "mpc", pv) for pv, _ in FORECAST_ERRORS]
+        stats = [_extra_vs_lp(rows, season, variant=v) for v in variants]
         means, stds = [m for m, _ in stats], [sd for _, sd in stats]
-        ax.errorbar(x, means, yerr=stds, fmt="-o", color=SEASON_COLORS[season], lw=1.4, ms=4,
-                    ecolor=MUTED, elinewidth=0.8, capsize=2,
-                    label=f"{SHORT_LABELS['mpc']}, {SEASON_LABELS[season].lower()}")
-        for xi, mean in zip(x, means, strict=True):
-            ax.annotate(f"{mean + 0.0:+.1f}", (xi, mean), xytext=(0, 7), textcoords="offset points", fontsize=7,
-                        color=INK, ha="center")
-        ax.axhline(0, color=COLORS["optim_lp"], ls="--", lw=1.3, label=SHORT_LABELS["optim_lp"])
-        rules, _ = _extra_vs_lp(rows, season, "vpp_reguli", None)
-        ax.axhline(rules, color=COLORS["vpp_reguli"], ls=":", lw=1.3,
-                   label=f"{SHORT_LABELS['vpp_reguli']} (+{rules:.0f})")
+        ax.barh(y, means, 0.7, xerr=stds, color=colors, error_kw=ERROR_KW)
+        for yi, mean, sd in zip(y, means, stds, strict=True):
+            ax.annotate(f"{mean + 0.0:+.0f}", (max(mean + sd, 0), yi), xytext=(4, 0), textcoords="offset points",
+                        va="center", fontsize=7, color=INK)
+        ax.set_xlim(min(0.0, min(means)) * 1.3 - 2, max(means[i] + stds[i] for i in range(len(means))) * 1.18)
+        rules, _ = _extra_vs_lp(rows, season, controller="vpp_reguli")
+        ax.annotate(f"{SHORT_LABELS['vpp_reguli']}: {rules:+.0f} lei", (0.98, 0.98), xycoords="axes fraction",
+                    ha="right", va="top", fontsize=8, color=COLORS["vpp_reguli"])
+        ax.axvline(0, color=MUTED, lw=0.8)
         ax.set_title(SEASON_LABELS[season], fontsize=10, color=INK, loc="left")
-        ax.set_xticks(x)
-        ax.set_xlabel("Eroare de prognoză PV la 24 h [%]")
-        ax.legend(loc="center right")
-    axes[0].set_ylabel(f"Cost peste optimul teoretic [lei / {s.n_days} zile]")
-    fig.suptitle(f"{LABELS['mpc']} cu erori de prognoză (consum: 2/3 din eroarea PV)\n"
-                 "diferență față de optimul teoretic (LP) pe același seed, medie ± abatere standard",
-                 fontsize=9, color=MUTED, x=0.01, ha="left")
+        ax.set_xlabel(f"Cost peste optimul teoretic [lei / {s.n_days} zile]")
+        ax.grid(axis="y", visible=False)
+    axes[0].set_yticks(y, [FORECAST_VARIANTS[v] for v in variants])
+    fig.suptitle(f"{LABELS['mpc']} cu câte o schimbare în prognoză, față de optimul teoretic (LP) pe același seed;\n"
+                 "medie ± abatere standard pe seed-uri", fontsize=9, color=MUTED, x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
@@ -308,7 +351,7 @@ def scale_chart(rows: list[dict], s: Settings, path: Path) -> None:
     right.set_title(f"(b) Timp de rulare [s], {s.n_days} zile, pas {60 * s.dt_h:.0f} min", fontsize=10, color=INK,
                     loc="left")
     fig.suptitle("Comunități aleatoare: PV 5-12 kWp, 0 / 1 / 2 module SE-F16 (20 / 50 / 30 % din case),\n"
-                 "consum după una din casele din dispozitive.csv, limite de rețea ~ n; punctele mici: seed 1-2",
+                 "dispozitive aleatoare din catalogul dispozitive.csv, limite de rețea ~ n; punctele mici: seed 1-2",
                  fontsize=9, color=MUTED, x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(path)
@@ -332,8 +375,8 @@ def _order(row: dict) -> tuple:
 
 STUDIES = {
     "forecast": Study(forecast_tasks, forecast_run_one, forecast_chart,
-                      ("season", "seed", "controller", "pv_error", "load_error", "cost_lei", "ssr", "peak_import_kw"),
-                      lambda r: (*_order(r), -1.0 if r["pv_error"] is None else r["pv_error"])),
+                      ("season", "seed", "controller", "variant", "cost_lei", "ssr", "peak_import_kw"),
+                      lambda r: (season_index(r["season"]), r["seed"], _variant_order(r))),
     "deg": Study(deg_tasks, deg_run_one, deg_chart,
                  ("season", "seed", "controller", "deg_cost", "cost_lei", "throughput_kwh", "cycles_per_day", "ssr",
                   "peak_import_kw"),
@@ -356,7 +399,7 @@ def run_study(name: str, s: Settings) -> list[dict]:
 
 def read_rows(path: Path) -> list[dict]:
     def parse(key: str, value: str):
-        if key in ("season", "controller"):
+        if key in ("season", "controller", "variant"):
             return value
         if value == "":
             return None
@@ -368,7 +411,7 @@ def read_rows(path: Path) -> list[dict]:
 
 def print_means(name: str, rows: list[dict]) -> None:
     """Mean over seeds of the study's main metrics, one line per setting."""
-    group = {"forecast": ("season", "controller", "pv_error"), "deg": ("season", "controller", "deg_cost"),
+    group = {"forecast": ("season", "controller", "variant"), "deg": ("season", "controller", "deg_cost"),
              "p2p": ("season", "controller", "p2p"), "scale": ("n_houses", "controller")}[name]
     metrics = {"forecast": ("cost_lei", "ssr"), "deg": ("cost_lei", "throughput_kwh", "cycles_per_day"),
                "p2p": ("cost_lei", "ssr", "p2p_kwh"), "scale": ("cost_per_house", "ssr", "wall_s")}[name]

@@ -15,7 +15,7 @@ import numpy as np
 
 from vpp_core import data_sources as ds
 from vpp_core.metrics import compute_metrics
-from vpp_core.optimizer import MPCController
+from vpp_core.optimizer import RealisticMPCController
 from vpp_core.params import default_community
 from vpp_core.reporting import (
     COLORS,
@@ -46,7 +46,7 @@ def run_one(task: tuple[str, int, float, int, float, bool, float | None, int]) -
     community = default_community()
     scenario = make_scenario(season, seed, n_days, dt_h, real, price_year=price_year)
     t0 = time.perf_counter()
-    controller = MPCController(seed=seed, weights=weights(deg_cost, peak_cost=peak_cost), name="mpc_varf")
+    controller = RealisticMPCController(weights=weights(deg_cost, peak_cost=peak_cost), name="mpc_varf")
     metrics = compute_metrics(simulate(community, scenario, controller))["community"]
     return {
         "season": season, "seed": seed, "peak_cost": peak_cost, "cost_lei": metrics["cost_lei"],

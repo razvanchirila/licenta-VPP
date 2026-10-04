@@ -9,4 +9,4 @@
 | `run_tests.bat` | testele backend-ului |
 | `run_experiments.bat` | comparația strategiilor pe o săptămână |
 | `run_evaluation.bat` | evaluarea completă, rezultate în `results/` |
-| `run_results.bat` | regenerează toate rezultatele |
+| `run_results.bat [procese]` | regenerează toate rezultatele |

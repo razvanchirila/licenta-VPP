@@ -1,6 +1,7 @@
 """
-The live loop's load comes from the devices seeded from dispozitive.csv, its PV from the 2023 data and its
-prices from SIM_PRICE_YEAR (SIM_DATA=real). Same test-database setup as test_api.py; steps are triggered by hand.
+The live loop's load comes from the devices seeded from each house's generated composition, its PV from the
+2023 data and its prices from SIM_PRICE_YEAR (SIM_DATA=real). Same test-database setup as test_api.py; steps
+are triggered by hand.
 """
 import asyncio
 import logging
@@ -78,33 +79,38 @@ def _expected_profiles(house_id: int, day: date = DAY, seed: int = 42) -> dict[s
     """name -> kW profile of the day, drawn exactly as the loop (and community_load) draw them."""
     rng = lm.house_rng(seed + day.toordinal(), house_id)
     return {app.dispozitiv: lm.appliance_profile(app, day, 1, DT_H, rng)
-            for app in lm.by_house(lm.load_appliances())[house_id]}
+            for app in lm.compose_house(house_id, lm.load_catalog()).appliances}
 
 
 # ---------------------------------------------------------------- devices
 
-def test_seeded_devices_match_the_csv(client, admin):
-    groups = lm.by_house(lm.load_appliances())
+def test_seeded_devices_are_the_generated_composition(client, admin):
+    catalog = lm.load_catalog()
     for house in client.get("/api/houses", headers=admin).json():
         seeded = [d for d in house["devices"] if d["schedule"] is not None]
-        apps = groups[house["id"]]
+        apps = lm.compose_house(house["id"], catalog).appliances
         assert [d["name"] for d in seeded] == [a.dispozitiv for a in apps]
         assert [d["critical"] for d in seeded] == [not a.flexibil for a in apps]
         assert [d["power_w"] for d in seeded] == [a.putere_w for a in apps]
         assert all(d["status_on"] for d in seeded)
         assert [d["schedule"]["mode"] for d in seeded] == [a.mod for a in apps]
-    ev = next(d for d in client.get("/api/houses/4/devices", headers=admin).json() if "mașină electrică" in d["name"])
-    assert ev["schedule"]["interval"] == "22-6" and ev["schedule"]["cycles_per_week"] == 3
+    house = lm.compose_house(3, catalog)
+    devices = client.get("/api/houses/3/devices", headers=admin).json()
+    washer = next(d for d in devices if d["name"] == "mașină de spălat")
+    assert washer["schedule"]["interval"] == "8-12 (40%), 17-22 (60%)"
+    assert washer["schedule"]["cycles_per_week"] == pytest.approx(1.2 * house.persoane)       # per person in the CSV
 
 
 def test_house_load_is_the_sum_of_its_switched_on_devices(client, admin):
     profiles = _expected_profiles(1)
     total = sum(profiles.values())
-    boiler = profiles["boiler electric"]
-    t = int(np.argmax(boiler > 0.5))                       # a step where the boiler is running
+    flexible = [a.dispozitiv for a in lm.compose_house(1, lm.load_catalog()).appliances if a.flexibil]
+    name = max(flexible, key=lambda n: profiles[n].max())     # a switchable device that runs on that day
+    boiler = profiles[name]
+    t = int(np.argmax(boiler > 0.5))
     assert boiler[t] > 0.5
     devices = client.get("/api/houses/1/devices", headers=admin).json()
-    boiler_id = next(d["id"] for d in devices if d["name"] == "boiler electric")
+    boiler_id = next(d["id"] for d in devices if d["name"] == name)
 
     row = _step_house(client, admin, 1, t)
     assert row["load_kw"] == pytest.approx(total[t], abs=1e-3)
@@ -128,7 +134,7 @@ def test_house_load_is_the_sum_of_its_switched_on_devices(client, admin):
 def test_seeded_load_equals_the_scenario_generator(client, admin):
     """With every seeded device on, the loop draws what community_load() draws for that day."""
     seed = 42 + DAY.toordinal()
-    crit, flex = lm.community_load(sim.community, lm.DISPOZITIVE_CSV, DAY, 1, DT_H, seed)
+    crit, flex = lm.community_load(sim.community, DAY, 1, DT_H, seed)
     for t in (0, 30, 76):
         row = _step_house(client, admin, 2, t)
         assert row["load_kw"] == pytest.approx(crit[1, t] + flex[1, t], abs=1e-3)
@@ -202,3 +208,25 @@ def test_synthetic_fallback_when_the_csvs_are_missing(client, admin, monkeypatch
     sim.scenario = None
     sim.day, sim.t = DAY, 0
     assert client.post("/api/sim/step", headers=admin).json()["data_source"] == "real"
+
+
+# ---------------------------------------------------------------- MPC history
+
+def test_live_mpc_forecasts_from_the_recorded_steps_only(client, admin):
+    assert client.put("/api/config", json={"controller": "mpc"}, headers=admin).status_code == 200
+    try:
+        sim.observations.clear()
+        rows = [_step_house(client, admin, 1, t) for t in (40, 41, 42)]
+        assert rows[-1]["load_kw"] > 0
+        index = sim.house_ids.index(1)
+        today = sim.observations.keep_days * sim.steps_per_day
+        history = sim._history(43)
+        assert history.n_obs == history.now == today + 43
+        assert np.isfinite(history.pv_kw[:, today + 40:]).all() and np.isnan(history.pv_kw[:, :today + 40]).all()
+        assert history.load_kw[index, today + 42] == pytest.approx(rows[-1]["load_kw"], abs=1e-3)
+        assert len(history.price_import) == today + sim.steps_per_day          # 10:45: tomorrow not published
+        assert len(sim._history(52).price_import) == today + 2 * sim.steps_per_day
+        sim.day, sim.t = DAY, 43
+        assert client.post("/api/sim/step", headers=admin).json()["controller"] == "mpc"
+    finally:
+        client.post("/api/config/reset", headers=admin)
