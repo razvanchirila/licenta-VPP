@@ -6,6 +6,7 @@ from vpp_core import sensitivity as sens
 from vpp_core.forecast import HISTORY_DAYS
 from vpp_core.params import MODULE_PROBABILITIES, PV_KWP_CHOICES, deye_se_f16, random_community
 from vpp_core.reporting import make_scenario
+from vpp_core.thermal import Weather
 
 TINY = sens.Settings(n_seeds=1, n_days=1, dt_h=1.0, real=False, workers=0, scale_sizes=(2, 10))
 
@@ -50,7 +51,9 @@ def test_scale_scenario_uses_device_load_for_every_house():
     community = random_community(40, seed=2)
     scenario = make_scenario("iarna", 2, 1, 0.5, False, community)
     days = HISTORY_DAYS + 1                              # the week is generated with its meter history in front
-    crit, flex = lm.community_load(community, scenario.past.start, days, 0.5, 2)
+    weather = Weather(np.concatenate([scenario.past.temp_out_c, scenario.temp_out_c]),
+                      np.concatenate([scenario.past.solar_w_m2, scenario.solar_w_m2]))
+    crit, flex = lm.community_load(community, scenario.past.start, days, 0.5, 2, weather=weather)
     np.testing.assert_array_equal(scenario.load_crit_kw, crit[:, -48:])
     np.testing.assert_array_equal(scenario.load_flex_kw, flex[:, -48:])
     np.testing.assert_array_equal(scenario.past.load_flex_kw, flex[:, :-48])

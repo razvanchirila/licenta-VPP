@@ -1,4 +1,5 @@
-"""Bottom-up load: catalog parsing, weighted intervals, random houses, energy consistency, wiring into scenarios."""
+"""Bottom-up load: catalog and neighbourhood parsing, the four device types, composition, wiring into scenarios."""
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -11,6 +12,8 @@ from vpp_core.scenario_real import generate_scenario_real
 
 C = default_community()
 HEADER = ";".join(lm.COLUMNS)
+HOUSE_HEADER = ";".join(lm.HOUSE_COLUMNS)
+MONDAY = date(2023, 1, 2)
 
 
 def write_csv(path, rows, header=HEADER):
@@ -18,7 +21,7 @@ def write_csv(path, rows, header=HEADER):
     return path
 
 
-def energy_kwh_per_day(app, start=date(2023, 1, 2), n_days=28, dt_h=0.25, seed=0):
+def energy_kwh_per_day(app, start=MONDAY, n_days=28, dt_h=0.25, seed=0):
     crit, flex = lm.house_load_profile([app], start, n_days, dt_h, np.random.default_rng(seed))
     return (crit + flex).sum() * dt_h / n_days, crit, flex
 
@@ -29,277 +32,235 @@ def by_hour(series, dt_h=0.25):
     return series.reshape(-1, spd).sum(axis=0).reshape(24, -1).sum(axis=1) * dt_h
 
 
-def iv(text):
-    return lm.parse_intervals(text)
+def prog(interval=None, durata=0.0, porniri=0.0, zile="toate", sezon="tot_anul"):
+    return lm.Program("", lm.parse_interval(interval) if interval else None, durata, porniri, zile, sezon)
+
+
+# ----------------------------------------------------------------------------- committed files
+
+def test_committed_catalog_and_neighbourhood_parse():
+    catalog = lm.load_catalog()
+    assert {r.tip for r in catalog.rows} == set(lm.TIPURI)
+    assert {"frigider", "router", "standby", "iluminat", "televizor"} == set(catalog.names("toti"))
+    assert set(catalog.names("incalzire")) == {"pompa de caldura", "radiator electric"}
+    plita = [r for r in catalog.rows if r.dispozitiv == "plita"]
+    assert [(r.program.moment, r.acasa, r.program.zile) for r in plita] == [
+        ("cina", "oricand", "toate"), ("pranz", "oricand", "weekend"), ("pranz", "da", "lucru")]
+    washer = next(r for r in catalog.rows if r.dispozitiv == "masina de spalat")
+    assert washer.program.porniri_pe_saptamana == pytest.approx(1.3) and washer.pe_persoana   # written as 1,3
+    assert [h.casa for h in catalog.houses] == list(range(1, 11))
+
+
+def test_committed_neighbourhood_covers_the_extremes():
+    houses = lm.compose_houses(range(1, 11))
+    annual = {h.casa: h.kwh_per_year() for h in houses}
+    assert min(annual, key=annual.get) == 1 and max(annual, key=annual.get) == 7      # pensioner .. has everything
+    assert 500 < annual[1] < 1500 and annual[7] > 4000
+    ev = {h.casa for h in houses if any(a.dispozitiv == "masina electrica" for a in h.appliances)}
+    assert ev == {7, 9}
+    assert {h.casa for h in houses if h.acasa_ziua} == {1, 2, 6, 7, 8}
 
 
 # ----------------------------------------------------------------------------- CSV
 
-def test_committed_catalog_parses():
-    catalog = lm.load_catalog()
-    names = [device.appliance.dispozitiv for device in catalog.devices]
-    assert len(names) == len(set(names))
-    assert {device.appliance.mod for device in catalog.devices} == set(lm.MODES)
-    always = {device.appliance.dispozitiv for device in catalog.devices if device.probabilitate == 1}
-    assert {"frigider", "router și standby"} <= always
-    hob = next(device for device in catalog.devices if device.appliance.dispozitiv == "plită electrică")
-    assert hob.appliance.ore_pe_zi == pytest.approx(0.25) and hob.pe_persoana       # written as 0,25 (Excel RO)
-    lights = next(device.appliance for device in catalog.devices if device.appliance.dispozitiv == "iluminat")
-    assert lights.intervale == ((6, 8, 20), (17, 24, 80))
-    assert min(catalog.persoane) >= 1 and sum(catalog.ponderi) == pytest.approx(1)
-
-
-def test_committed_houses_are_plausible():
-    houses = lm.compose_houses(range(1, 11))
-    annual = np.array([house.kwh_per_year() for house in houses])
-    assert (annual > 800).all() and (annual < 12000).all()
-    assert 2000 < annual.mean() < 7000
-
-
 def test_parse_interval_and_wrap():
     assert lm.parse_interval("18-23") == (18.0, 23.0)
     assert lm.parse_interval("0-24") == (0.0, 24.0)
-    assert lm.parse_interval("22-6") == (22.0, 30.0)
-    with pytest.raises(ValueError):
-        lm.parse_interval("18")
-    with pytest.raises(ValueError):
-        lm.parse_interval("25-3")
-
-
-def test_parse_weighted_intervals():
-    assert iv("8-12:40 17-22:60") == ((8, 12, 40), (17, 22, 60))
-    assert iv("0-24") == ((0, 24, 100),)
-    assert iv("18-24:40 0-7:60") == ((18, 24, 40), (0, 7, 60))
-    assert iv("22-6:1,5  9-10") == ((22, 30, 1.5), (9, 10, 100))
-    app = lm.Appliance("x", 100, "zilnic", 2, intervale=iv("8-12:40 17-22:60"))
-    assert [share for _, _, share in app.windows] == pytest.approx([0.4, 0.6])
-    for text in ("8-12:40 17-22:60", "22-6", "6-8:20 17-24:80", "7-9:1 12-14:2,5"):
-        assert lm.parse_intervals(lm.format_intervals(iv(text))) == iv(text)
-    assert lm.describe_intervals(iv("8-12:40 17-22:60")) == "8-12 (40%), 17-22 (60%)"
-    assert lm.describe_intervals(iv("22-6")) == "22-6"
-    for bad in ("", "8-12:0", "8-12:-1", "8-12:abc", "8-12 25-26"):
+    assert lm.parse_interval("18-7") == (18.0, 31.0)
+    assert lm.format_interval((18.0, 31.0)) == "18-7"
+    for bad in ("18", "25-3", "a-b"):
         with pytest.raises(ValueError):
-            lm.parse_intervals(bad)
+            lm.parse_interval(bad)
 
 
 def test_bad_rows_report_the_line(tmp_path):
-    ok = "frigider;45;continuu;;;;0-24;tot_anul;1;nu;nu"
+    ok = "frigider;;toti;nu;oricand;permanent;21;;;;toate;tot_anul;nu;x"
     for bad, text in [
-        ("tv;100;uneori;2;;;18-23;tot_anul;1;nu;nu", "mod"),
-        ("tv;100;zilnic;8;;;18-23;tot_anul;1;nu;nu", "intervalul 18-23"),
-        ("tv;100;zilnic;5;;;8-18:10 18-19:90;tot_anul;1;nu;nu", "4.5 h din ore_pe_zi cad in intervalul 18-19"),
-        ("tv;100;zilnic;2;;;18-23;tot_anul;1;nu;poate", "flexibil"),
-        ("tv;100;zilnic;2;;;18-23;tot_anul;1;poate;nu", "pe_persoana"),
-        ("tv;100;zilnic;2;;;18-23;tot_anul;1,5;nu;nu", "probabilitate"),
-        ("tv;100;zilnic;2;;;18-23;tot_anul;;nu;nu", "probabilitate"),
-        ("tv;100;zilnic;2;;;18-23:0;tot_anul;1;nu;nu", "ponderea"),
-        ("masina;700;ciclic;;0;90;8-21;tot_anul;1;da;da", "ciclic"),
-        ("tv;abc;zilnic;2;;;18-23;tot_anul;1;nu;nu", "numar"),
+        ("tv;;toti;nu;oricand;uneori;60;18-23;;;toate;tot_anul;nu;x", "tip"),
+        ("tv;;cativa;nu;oricand;interval;60;18-23;;;toate;tot_anul;nu;x", "cine"),
+        ("tv;;toti;nu;mereu;interval;60;18-23;;;toate;tot_anul;nu;x", "acasa"),
+        ("tv;;toti;nu;oricand;interval;60;18-23;;;luni;tot_anul;nu;x", "zile"),
+        ("tv;;toti;nu;oricand;interval;60;18-23;;;toate;toamna;nu;x", "sezon"),
+        ("tv;;toti;nu;oricand;interval;60;;;;toate;tot_anul;nu;x", "trebuie interval"),
+        ("tv;;toti;nu;oricand;interval;60;18-23;30;;toate;tot_anul;nu;x", "fara durata_min"),
+        ("tv;;toti;da;oricand;interval;60;18-23;;;toate;tot_anul;nu;x", "pe_persoana"),
+        ("cuptor;;ales;nu;oricand;durata;2000;17-20;;2;toate;tot_anul;nu;x", "durata_min"),
+        ("cuptor;;ales;nu;oricand;durata;2000;17-20;30;0;toate;tot_anul;nu;x", "porniri"),
+        ("pompa;;incalzire;nu;oricand;termic;2500;0-24;;;toate;tot_anul;da;x", "raman goale"),
+        ("tv;;toti;nu;oricand;interval;abc;18-23;;;toate;tot_anul;nu;x", "numar"),
+        ("tv;;toti;nu;oricand;interval;0;18-23;;;toate;tot_anul;nu;x", "putere_w"),
+        ("tv;;toti;nu;oricand;interval;60;18-23;;;toate;tot_anul;poate;x", "flexibil"),
+        ("sauna;;ales;nu;oricand;termic;6000;;;;toate;tot_anul;da;x", "modelul termic stie doar"),
+        ("frigider;;toti;nu;oricand;permanent;30;;;;toate;tot_anul;nu;x", "putere_w difera"),
     ]:
         with pytest.raises(ValueError, match=f"randul 3.*{text}"):
-            lm.load_devices(write_csv(tmp_path / "d.csv", [ok, bad]))
-    (tmp_path / "h.csv").write_text("casa;dispozitiv\n1;frigider\n", encoding="utf-8")
+            lm.load_rows(write_csv(tmp_path / "d.csv", [ok, bad]))
     with pytest.raises(ValueError, match="antetul"):
-        lm.load_devices(tmp_path / "h.csv")
+        lm.load_rows(write_csv(tmp_path / "d.csv", [ok], header="dispozitiv;putere_w"))
 
 
-def test_per_person_hours_must_fit_for_the_largest_household(tmp_path):
-    row = "laptop;60;zilnic;0,5;;;18-20;tot_anul;1;da;nu"
-    path = write_csv(tmp_path / "d.csv", [row])
-    assert lm.load_devices(path, max_people=4)
-    with pytest.raises(ValueError, match="randul 2: pentru 5 persoane: 2.5 h"):
-        lm.load_devices(path, max_people=5)
-    households = write_csv(tmp_path / "g.csv", ["1;50", "5;50"], header="persoane;pondere")
-    with pytest.raises(ValueError, match="pentru 5 persoane"):
-        lm.load_catalog(path, households)
-
-
-def test_households_file(tmp_path):
-    people, weights = lm.load_households(write_csv(tmp_path / "g.csv", ["1;25", "2;75", ";"], "persoane;pondere"))
-    assert people == (1, 2) and weights == pytest.approx((0.25, 0.75))
-    for bad, text in [("0;10", "persoane"), ("2,5;10", "persoane"), ("2;0", "pondere"), ("1;5", "de doua ori")]:
-        with pytest.raises(ValueError, match=f"randul 3.*{text}"):
-            lm.load_households(write_csv(tmp_path / "g.csv", ["1;25", bad], "persoane;pondere"))
-    with pytest.raises(ValueError, match="antetul"):
-        lm.load_households(write_csv(tmp_path / "g.csv", ["1;25"], "pers;pondere"))
-
-
-def test_blank_lines_and_comma_decimals(tmp_path):
-    devices = lm.load_devices(write_csv(tmp_path / "d.csv", [
-        "plită;1500;zilnic;0,8;;;11-21;tot_anul;0,6;da;nu", ";;;;;;;;;;", "boiler;2000;ciclic;;3,5;45;6-22;;1;;da",
+def test_blank_lines_case_and_comma_decimals(tmp_path):
+    rows = lm.load_rows(write_csv(tmp_path / "d.csv", [
+        "Masina de spalat;;ales;da;oricand;durata;130;9-21;219;1,3;;;nu;x", ";;;;;;;;;;;;;",
     ]))
-    assert len(devices) == 2
-    assert devices[0].appliance.ore_pe_zi == pytest.approx(0.8) and devices[0].probabilitate == pytest.approx(0.6)
-    boiler = devices[1]
-    assert boiler.appliance.cicluri_pe_saptamana == pytest.approx(3.5)
-    assert boiler.appliance.sezon == "tot_anul" and boiler.appliance.flexibil and not boiler.pe_persoana
+    assert len(rows) == 1
+    washer = rows[0]
+    assert washer.dispozitiv == "masina de spalat" and washer.acasa == "oricand"
+    assert washer.program == lm.Program("", (9.0, 21.0), 219.0, 1.3, "toate", "tot_anul")
 
 
-# ----------------------------------------------------------------------------- energy consistency
+def test_houses_file_is_checked_against_the_catalog(tmp_path):
+    rows = lm.load_rows(write_csv(tmp_path / "d.csv", [
+        "frigider;;toti;nu;oricand;permanent;21;;;;toate;tot_anul;nu;x",
+        "laptop;;ales;da;oricand;durata;30;17-23;150;7;toate;tot_anul;nu;x",
+        "pompa de caldura;;incalzire;nu;oricand;termic;2500;;;;toate;tot_anul;da;x",
+    ]))
+    ok = "1;pensionar;1;da;gaz;veche;"
+    couple = "2;cuplu;2;nu;pompa de caldura;;laptop"
+    houses = lm.load_houses(rows, write_csv(tmp_path / "c.csv", [ok, couple], HOUSE_HEADER))
+    assert houses[1] == lm.HouseSpec(2, "cuplu", 2, False, "pompa de caldura", "medie", ("laptop",))
+    for bad, text in [
+        ("3;x;1;da;gaz;;", "astept 2"),
+        ("2;x;0;da;gaz;;", "persoane"),
+        ("2;x;1,5;da;gaz;;", "persoane"),
+        ("2;x;1;poate;gaz;;", "acasa_ziua"),
+        ("2;x;1;da;lemne;;", "incalzire"),
+        ("2;x;1;da;gaz;;laptop,sauna", "sauna"),
+        ("2;x;1;da;gaz;paie;", "izolatie"),
+        ("2;x;1;da;gaz;;frigider", "frigider"),
+    ]:
+        with pytest.raises(ValueError, match=f"randul 3.*{text}"):
+            lm.load_houses(rows, write_csv(tmp_path / "c.csv", [ok, bad], HOUSE_HEADER))
+    with pytest.raises(ValueError, match="nicio casa"):
+        lm.load_houses(rows, write_csv(tmp_path / "c.csv", [], HOUSE_HEADER))
 
-def test_continuous_is_constant():
-    app = lm.Appliance("frigider", 45, "continuu")
+
+def test_programs_round_trip_through_json():
+    programs = (prog("18-7", 200, 3), prog("17-23", sezon="iarna"), lm.Program("cina", (18.0, 20.0), 30, 7))
+    assert lm.programs_from_json(lm.programs_to_json(programs)) == programs
+    assert lm.programs_from_json(lm.programs_to_json((lm.Program(),))) == (lm.Program(),)
+
+
+# ----------------------------------------------------------------------------- energy
+
+def test_permanent_is_constant():
+    app = lm.Appliance("frigider", 45, "permanent")
     kwh, crit, flex = energy_kwh_per_day(app, n_days=3)
     assert np.allclose(crit, 0.045) and np.allclose(flex, 0)
     assert kwh == pytest.approx(0.045 * 24)
 
 
 @pytest.mark.parametrize("dt_h", [0.25, 1.0])
-def test_daily_block_energy(dt_h):
-    app = lm.Appliance("iluminat", 100, "zilnic", ore_pe_zi=5, intervale=iv("17-23"))
-    kwh, crit, _ = energy_kwh_per_day(app, dt_h=dt_h)
-    assert kwh == pytest.approx(0.5, rel=0.05)                       # 100 W x 5 h
-    hourly = by_hour(crit, dt_h)
-    assert hourly[:17].sum() == 0 and hourly[23:].sum() == 0
+def test_interval_runs_the_whole_interval_with_moving_ends(dt_h):
+    app = lm.Appliance("televizor", 100, "interval", (prog("18-23"),))
+    kwh, crit, _ = energy_kwh_per_day(app, n_days=56, dt_h=dt_h)
+    assert kwh == pytest.approx(0.5, rel=0.03)                              # 100 W x 5 h
+    hourly = by_hour(crit, dt_h) / 56
+    assert hourly[:17].sum() == 0 and hourly[0] == 0                        # ends move by at most 30 min
+    assert hourly[19:22] == pytest.approx(0.1)                              # always on in the middle
+    assert 0 < hourly[17] < 0.1 and 0 < hourly[23] < 0.1
 
 
-def test_daily_hours_are_split_over_the_intervals_by_weight():
-    app = lm.Appliance("iluminat", 100, "zilnic", ore_pe_zi=5, intervale=iv("6-8:20 17-24:80"))
-    kwh, crit, _ = energy_kwh_per_day(app, n_days=56)
-    assert kwh == pytest.approx(0.5, rel=0.03)
-    hourly = by_hour(crit) / 56
-    assert hourly[6:8].sum() == pytest.approx(0.1, rel=0.05)          # 20 % of 5 h x 100 W, every day
-    assert hourly[17:24].sum() == pytest.approx(0.4, rel=0.05)
-    assert hourly[:6].sum() == 0 and hourly[8:17].sum() == 0
-    days = crit.reshape(56, -1)
-    assert (days[:, 24:32].sum(axis=1) > 0).all() and (days[:, 68:].sum(axis=1) > 0).all()   # one block in each
+def test_days_and_seasons_restrict_a_program():
+    office = lm.Appliance("calculator", 100, "interval", (prog("9-17", zile="lucru"),))
+    kwh, crit, _ = energy_kwh_per_day(office, n_days=28)
+    assert kwh == pytest.approx(0.8 * 5 / 7, rel=0.02)
+    week = crit.reshape(28, -1).sum(axis=1).reshape(4, 7)                   # starts on a Monday
+    assert (week[:, :5] > 0).all() and (week[:, 5:] == 0).all()
+    lights = lm.Appliance("iluminat", 100, "interval", (prog("17-23", sezon="iarna"), prog("21-23", sezon="vara")))
+    assert energy_kwh_per_day(lights, start=MONDAY)[0] == pytest.approx(0.6, rel=0.03)
+    assert energy_kwh_per_day(lights, start=date(2023, 7, 3))[0] == pytest.approx(0.2, rel=0.05)
+    assert energy_kwh_per_day(lights, start=date(2023, 4, 3))[0] == 0
+    assert lights.kwh_per_year() == pytest.approx(0.6 * 151 + 0.2 * 92)
 
 
-def test_cyclic_energy_and_count():
-    app = lm.Appliance("mașină de spălat", 700, "ciclic", cicluri_pe_saptamana=4, durata_ciclu_min=90,
-                       intervale=iv("8-21"), flexibil=True)
-    kwh, crit, flex = energy_kwh_per_day(app)
-    assert kwh == pytest.approx(0.7 * 4 / 7 * 1.5, rel=0.05)
-    assert crit.sum() == 0 and (flex >= 0).all()
+def test_durata_energy_count_and_window():
+    app = lm.Appliance("masina de spalat", 700, "durata", (prog("8-21", 90, 4),))
+    kwh, crit, _ = energy_kwh_per_day(app, n_days=70)
+    assert kwh == pytest.approx(0.7 * 4 / 7 * 1.5, rel=0.03)
+    assert app.kwh_per_day("iarna") == pytest.approx(0.7 * 4 / 7 * 1.5)
+    hourly = by_hour(crit)
+    assert hourly[:8].sum() == 0 and hourly[23:].sum() == 0                 # starts 8-21, runs <= 1.65 h
+    weekend = lm.Appliance("aspirator", 900, "durata", (prog("9-13", 45, 1, zile="weekend"),))
+    _, crit, _ = energy_kwh_per_day(weekend, n_days=28)
+    days = crit.reshape(28, -1).sum(axis=1).reshape(4, 7)
+    assert (days[:, :5] == 0).all() and (days[:, 5:].sum(axis=1) > 0).all() # one run every weekend
 
 
-def test_cycles_pick_an_interval_with_its_weight():
-    app = lm.Appliance("boiler", 1000, "ciclic", cicluri_pe_saptamana=14, durata_ciclu_min=30,
-                       intervale=iv("6-9:25 18-21:75"), flexibil=True)
-    n_days = 364
-    kwh, _, flex = energy_kwh_per_day(app, n_days=n_days)
-    assert kwh == pytest.approx(1.0, rel=0.03)                       # 2 cycles x 0.5 h x 1 kW
-    hourly = by_hour(flex)
-    morning, evening = hourly[6:10].sum(), hourly[18:22].sum()
-    assert morning + evening == pytest.approx(hourly.sum())
-    assert morning / (morning + evening) == pytest.approx(0.25, abs=0.03)   # 728 cycles, sd ~ 0.016
-
-
-def test_thermal_energy_follows_the_season():
-    app = lm.Appliance("pompă de căldură", 2500, "termic", ore_pe_zi=6, intervale=iv("0-24"), sezon="iarna")
-    winter, _, _ = energy_kwh_per_day(app, start=date(2023, 1, 2))
-    shoulder, _, _ = energy_kwh_per_day(app, start=date(2023, 4, 3))
-    summer, _, _ = energy_kwh_per_day(app, start=date(2023, 7, 3))
-    assert winter == pytest.approx(15.0, rel=0.05)
-    assert shoulder == pytest.approx(7.5, rel=0.05)
-    assert summer == 0
-    ac = lm.Appliance("aer condiționat", 1200, "termic", ore_pe_zi=4, intervale=iv("12-23"), sezon="vara")
-    assert energy_kwh_per_day(ac, start=date(2023, 7, 3))[0] == pytest.approx(4.8, rel=0.05)
-    assert energy_kwh_per_day(ac, start=date(2023, 1, 2))[0] == 0
-    assert app.kwh_per_year() == pytest.approx(15 * 151 + 7.5 * 122)
-
-
-def test_thermal_hours_are_split_over_the_intervals_by_weight():
-    app = lm.Appliance("radiator", 1500, "termic", ore_pe_zi=3, intervale=iv("6-9:30 17-23:70"), sezon="iarna")
-    kwh, crit, _ = energy_kwh_per_day(app, n_days=56)
-    assert kwh == pytest.approx(4.5, rel=0.03)
-    hourly = by_hour(crit) / 56
-    assert hourly[6:9].sum() == pytest.approx(0.3 * 4.5, rel=0.05)
-    assert hourly[17:23].sum() == pytest.approx(0.7 * 4.5, rel=0.05)
-
-
-def test_season_and_factor():
-    assert [lm.season_of(date(2023, m, 15)) for m in (1, 3, 4, 5, 6, 8, 9, 10, 11, 12)] == [
-        "iarna", "iarna", "intermediar", "intermediar", "vara", "vara", "intermediar", "intermediar", "iarna", "iarna",
-    ]
-    assert lm.thermal_factor("tot_anul", "vara") == 1.0
-    assert lm.thermal_factor("iarna", "intermediar") == 0.5
-    assert lm.thermal_factor("vara", "iarna") == 0.0
+def test_runs_of_a_week_never_pile_up_at_the_window_edge():
+    ev = lm.Appliance("masina electrica", 7400, "durata", (prog("18-7", 200, 3),), flexibil=True)
+    for start in (MONDAY, date(2023, 1, 5), date(2023, 1, 7)):
+        for n_days in (1, 2, 9):
+            for seed in range(20):
+                _, _, flex = energy_kwh_per_day(ev, start=start, n_days=n_days, seed=seed)
+                assert flex.max() <= 7.4 + 1e-9
 
 
 def test_interval_wrapping_midnight():
-    ev = lm.Appliance("EV", 7000, "ciclic", cicluri_pe_saptamana=7, durata_ciclu_min=60, intervale=iv("22-6"),
-                      flexibil=True)
+    ev = lm.Appliance("EV", 7000, "durata", (prog("22-6", 60, 7),), flexibil=True)
     kwh, _, flex = energy_kwh_per_day(ev)
     assert kwh == pytest.approx(7.0, rel=0.05)
     by_step = flex.reshape(-1, 96).sum(axis=0)
-    assert by_step[4 * 7 : 4 * 22].sum() == 0                          # nothing between 07:00 and 22:00
-    assert by_step[: 4 * 6].sum() > 0 and by_step[4 * 22 :].sum() > 0  # runs on both sides of midnight
-    night = lm.Appliance("veioză", 50, "zilnic", ore_pe_zi=3, intervale=iv("22-6"))
+    assert by_step[4 * 8 : 4 * 22].sum() == 0
+    assert by_step[: 4 * 6].sum() > 0 and by_step[4 * 22 :].sum() > 0
+    night = lm.Appliance("veioza", 50, "interval", (prog("22-6"),))
     kwh, crit, _ = energy_kwh_per_day(night)
-    assert kwh == pytest.approx(0.15, rel=0.05)
-    assert crit.reshape(-1, 96).sum(axis=0)[4 * 7 : 4 * 22].sum() == 0
+    assert kwh == pytest.approx(0.4, rel=0.03)
 
 
-def test_flexible_split_and_house_profile():
-    apps = [lm.Appliance("frigider", 100, "continuu"),
-            lm.Appliance("boiler", 2000, "ciclic", cicluri_pe_saptamana=7, durata_ciclu_min=60, flexibil=True)]
-    crit, flex = lm.house_load_profile(apps, date(2023, 1, 2), 7, 0.25, np.random.default_rng(1))
+def test_thermal_draws_nothing_here():
+    pump = lm.Appliance("pompa de caldura", 2500, "termic", flexibil=True)
+    kwh, crit, flex = energy_kwh_per_day(pump)
+    assert kwh == 0 and pump.kwh_per_year() == 0
+
+
+def test_flexible_split_and_seeding():
+    apps = [lm.Appliance("frigider", 100, "permanent"),
+            lm.Appliance("boiler", 2000, "durata", (prog("6-22", 60, 7),), flexibil=True)]
+    crit, flex = lm.house_load_profile(apps, MONDAY, 7, 0.25, np.random.default_rng(1))
     assert crit.shape == flex.shape == (7 * 96,)
     assert np.allclose(crit, 0.1)
-    assert flex.sum() * 0.25 == pytest.approx(7 * 2.0, rel=0.05)
+    assert flex.sum() * 0.25 == pytest.approx(7 * 2.0, rel=0.1)
+    a = lm.house_load_profile(apps, MONDAY, 2, 0.25, np.random.default_rng(3))
+    b = lm.house_load_profile(apps, MONDAY, 2, 0.25, np.random.default_rng(3))
+    c = lm.house_load_profile(apps, MONDAY, 2, 0.25, np.random.default_rng(4))
+    np.testing.assert_array_equal(a[1], b[1])
+    assert not np.array_equal(a[1], c[1])
 
 
-def test_profile_is_seeded():
-    apps = lm.compose_house(1, lm.load_catalog()).appliances
-    a = lm.house_load_profile(apps, date(2023, 1, 2), 2, 0.25, np.random.default_rng(3))
-    b = lm.house_load_profile(apps, date(2023, 1, 2), 2, 0.25, np.random.default_rng(3))
-    c = lm.house_load_profile(apps, date(2023, 1, 2), 2, 0.25, np.random.default_rng(4))
-    np.testing.assert_array_equal(a[0], b[0])
-    assert not np.array_equal(a[0], c[0])
+def test_season_of():
+    assert [lm.season_of(date(2023, m, 15)) for m in (1, 3, 4, 5, 6, 8, 9, 10, 11, 12)] == [
+        "iarna", "iarna", "intermediar", "intermediar", "vara", "vara", "intermediar", "intermediar", "iarna", "iarna",
+    ]
 
 
 # ----------------------------------------------------------------------------- composition
 
-def test_per_person_values_are_multiplied():
-    washer = lm.CatalogDevice(lm.Appliance("mașină de spălat", 700, "ciclic", cicluri_pe_saptamana=1.2,
-                                           durata_ciclu_min=90), pe_persoana=True)
-    laptop = lm.CatalogDevice(lm.Appliance("laptop", 60, "zilnic", ore_pe_zi=1.5), pe_persoana=True)
-    tv = lm.CatalogDevice(lm.Appliance("televizor", 100, "zilnic", ore_pe_zi=3))
-    assert washer.for_people(3).cicluri_pe_saptamana == pytest.approx(3.6)
-    assert washer.for_people(3).durata_ciclu_min == 90
-    assert laptop.for_people(4).ore_pe_zi == pytest.approx(6.0)
-    assert tv.for_people(5) == tv.appliance
+def test_composition_follows_the_house_row():
     catalog = lm.load_catalog()
-    for house in lm.compose_houses(range(1, 31), catalog):
-        for app in house.appliances:
-            device = next(d for d in catalog.devices if d.appliance.dispozitiv == app.dispozitiv)
-            factor = house.persoane if device.pe_persoana else 1
-            assert app.ore_pe_zi == pytest.approx(device.appliance.ore_pe_zi * factor)
-            assert app.cicluri_pe_saptamana == pytest.approx(device.appliance.cicluri_pe_saptamana * factor)
-            assert app.kwh_per_year() == pytest.approx(device.for_people(house.persoane).kwh_per_year())
+    retired = lm.compose_house(1, catalog)
+    assert retired.persoane == 1 and retired.acasa_ziua and retired.incalzire == "gaz"
+    assert [a.dispozitiv for a in retired.appliances] == [
+        "frigider", "router", "standby", "iluminat", "televizor", "microunde", "masina de spalat", "aspirator"]
+    tv = next(a for a in retired.appliances if a.dispozitiv == "televizor")
+    assert len(tv.programe) == 3                                            # evening, weekend, workday at home
+    family = lm.compose_house(5, catalog)
+    tv = next(a for a in family.appliances if a.dispozitiv == "televizor")
+    assert len(tv.programe) == 2
+    washer = next(a for a in family.appliances if a.dispozitiv == "masina de spalat")
+    assert washer.programe[0].porniri_pe_saptamana == pytest.approx(1.3 * 4)
+    office = next(a for a in lm.compose_house(9, catalog).appliances if a.dispozitiv == "calculator birou")
+    assert [p.moment for p in office.programe] == ["seara"]                 # nobody home in the day
+    assert "pompa de caldura" in [a.dispozitiv for a in lm.compose_house(7, catalog).appliances]
 
 
-def test_composition_depends_only_on_the_house_id():
+def test_larger_communities_repeat_the_neighbourhood():
     catalog = lm.load_catalog()
-    assert lm.compose_house(3, catalog) == lm.compose_house(3, lm.load_catalog())
-    many = lm.compose_houses(range(1, 201), catalog)
-    assert many[2] == lm.compose_house(3, catalog) and many[156] == lm.compose_house(157, catalog)
-    assert len({(h.persoane, tuple(a.dispozitiv for a in h.appliances)) for h in many}) > 50
-    assert lm.composition_rng(5).random() != lm.house_rng(lm.COMPOSITION_SEED, 5).random()
-
-
-def test_composition_follows_the_probabilities():
-    catalog = lm.load_catalog()
-    houses = lm.compose_houses(range(1, 3001), catalog)
-    people = np.array([house.persoane for house in houses])
-    assert people.min() >= 1
-    for count, weight in zip(catalog.persoane, catalog.ponderi, strict=True):
-        assert np.mean(people == count) == pytest.approx(weight, abs=0.03)
-    for device in catalog.devices:
-        name = device.appliance.dispozitiv
-        owned = np.mean([any(app.dispozitiv == name for app in house.appliances) for house in houses])
-        if device.probabilitate == 1:
-            assert owned == 1, name
-        assert owned == pytest.approx(device.probabilitate, abs=0.03), name
-
-
-def test_probability_zero_and_one(tmp_path):
-    devices = write_csv(tmp_path / "d.csv", ["frigider;45;continuu;;;;0-24;tot_anul;1;nu;nu",
-                                             "sauna;6000;zilnic;1;;;18-22;tot_anul;0;nu;nu"])
-    catalog = lm.load_catalog(devices, write_csv(tmp_path / "g.csv", ["2;1"], "persoane;pondere"))
-    for house in lm.compose_houses(range(1, 101), catalog):
-        assert house.persoane == 2 and [app.dispozitiv for app in house.appliances] == ["frigider"]
+    for k in (11, 23, 200):
+        twin = lm.compose_house(k, catalog)
+        base = lm.compose_house((k - 1) % 10 + 1, catalog)
+        assert twin.casa == k and twin.appliances == base.appliances and twin.persoane == base.persoane
+    assert lm.compose_house(0, catalog).appliances == lm.compose_house(10, catalog).appliances
 
 
 # ----------------------------------------------------------------------------- community
@@ -308,7 +269,7 @@ def test_community_load_shapes_and_house_independence():
     crit, flex = lm.community_load(C, date(2023, 1, 10), 3, 0.5, seed=0)
     assert crit.shape == flex.shape == (10, 144)
     assert (crit > 0).all() and (flex >= 0).all()
-    assert (crit + flex).sum(axis=1).min() * 0.5 > 3 * 1.5          # every house above 1.5 kWh/day
+    assert (crit + flex).sum(axis=1).min() * 0.5 > 3 * 1.5                  # every house above 1.5 kWh/day
     only_two = CommunityParams(houses=(HouseParams(id=4), HouseParams(id=2)))
     crit2, flex2 = lm.community_load(only_two, date(2023, 1, 10), 3, 0.5, seed=0)
     np.testing.assert_array_equal(crit2[0], crit[3])
@@ -323,7 +284,7 @@ def test_community_load_runs_the_composition_on_the_timing_stream():
     expected = lm.house_load_profile(house.appliances, start, 14, 0.25, lm.house_rng(0, 57))
     np.testing.assert_array_equal(crit[0], expected[0])
     np.testing.assert_array_equal(flex[0], expected[1])
-    always_on = sum(app.kw for app in house.appliances if app.mod == "continuu")
+    always_on = sum(app.kw for app in house.appliances if app.tip == "permanent")
     assert (crit[0] + flex[0]).min() >= always_on - 1e-9
     daily = (crit[0] + flex[0]).sum() * 0.25 / 14
     assert daily == pytest.approx(house.kwh_per_day("iarna"), rel=0.25)
@@ -351,38 +312,52 @@ def test_real_scenario_load_sources():
     np.testing.assert_array_equal(new.price_import, old.price_import)
     assert not np.allclose(new.load_kw, old.load_kw)
     daily = new.load_kw.sum(axis=1) * 0.25 / 2
-    expected = np.array([house.kwh_per_day("iarna") for house in lm.compose_houses(range(1, 11))])
-    assert 1.5 < daily.min() and daily.max() < 40
-    assert daily.mean() == pytest.approx(expected.mean(), rel=0.2)
+    assert 1 < daily.min() and daily.max() < 40
     with pytest.raises(ValueError):
         generate_scenario_real(C, load_source="sintetic")
 
 
 # ----------------------------------------------------------------------------- report
 
-def test_year_report_matches_the_table(tmp_path):
+def test_year_report_matches_the_table():
     houses = [
-        lm.House(1, 2, (lm.Appliance("frigider", 45, "continuu"),
-                        lm.Appliance("boiler", 2000, "ciclic", cicluri_pe_saptamana=10, durata_ciclu_min=45,
-                                     intervale=iv("6-9:50 18-23:50"), flexibil=True))),
-        lm.House(2, 3, (lm.Appliance("frigider", 45, "continuu"),
-                        lm.Appliance("iluminat", 90, "zilnic", ore_pe_zi=5, intervale=iv("6-8:20 17-24:80")),
-                        lm.Appliance("mașină de vase", 900, "ciclic", cicluri_pe_saptamana=4, durata_ciclu_min=120,
-                                     intervale=iv("13-15:20 19-23:80"), flexibil=True),
-                        lm.Appliance("pompă de căldură", 2500, "termic", ore_pe_zi=6, sezon="iarna"))),
+        lm.House(1, "a", 2, True, "gaz", "medie", (
+            lm.Appliance("frigider", 45, "permanent"),
+            lm.Appliance("boiler", 2000, "durata", (prog("6-9", 45, 10),), flexibil=True))),
+        lm.House(2, "b", 3, False, "pompa de caldura", "noua", (
+            lm.Appliance("frigider", 45, "permanent"),
+            lm.Appliance("iluminat", 90, "interval", (prog("6-8", sezon="iarna"), prog("17-23"))),
+            lm.Appliance("masina de vase", 900, "durata", (prog("19-23", 120, 4),), flexibil=True),
+            lm.Appliance("pompa de caldura", 2500, "termic", flexibil=True))),
     ]
     year = lm.simulate_year(houses, 1.0, seed=0)
     rows = lm.house_rows(houses, year, 1.0)
     assert [(row["casa"], row["persoane"], row["dispozitive"]) for row in rows] == [(1, 2, 2), (2, 3, 4)]
-    assert rows[1]["lista"] == "frigider, iluminat, mașină de vase, pompă de căldură"
+    assert rows[1]["lista"] == "frigider, iluminat, masina de vase, pompa de caldura"
     for row in rows:
         assert row["kwh_an"] == pytest.approx(row["kwh_an_calculat"], rel=0.03)
-        assert row["kwh_an"] == pytest.approx(sum(row[f"kwh_an_{mode}"] for mode in lm.MODES))
-        assert 0 < row["cota_flexibil"] < 1
-    assert rows[1]["kwh_zi_iarna"] > 2 * rows[1]["kwh_zi_vara"]        # heat pump
+        assert row["kwh_an"] == pytest.approx(sum(row[f"kwh_an_{tip}"] for tip in lm.TIPURI))
+    assert rows[1]["kwh_an_termic"] == 0
     devices = lm.device_rows(houses)
-    assert len(devices) == 6 and devices[1]["intervale"] == "6-9 (50%), 18-23 (50%)"
-    assert sum(d["kwh_an"] for d in devices if d["casa"] == 2) == pytest.approx(rows[1]["kwh_an_calculat"])
-    lm.daily_profile_chart(year, 1.0, tmp_path / "profil.png")
-    lm.annual_chart(rows, tmp_path / "anual.png")
-    assert (tmp_path / "profil.png").stat().st_size > 0 and (tmp_path / "anual.png").stat().st_size > 0
+    assert [d["program"] for d in devices[3:5]] == ["6-8 iarnă; 17-23", "4×120 min/săpt. 19-23"]
+
+
+def test_phases_shape_a_run_and_keep_its_energy(tmp_path):
+    rows = lm.load_rows(write_csv(tmp_path / "d.csv", [
+        "masina de spalat;;ales;da;oricand;durata;2000;9-21;219;1,3;toate;tot_anul;nu;x;10:2000 209:40",
+    ]))
+    washer = rows[0].program
+    assert washer.faze == ((10.0, 2000.0), (209.0, 40.0))
+    assert washer.run_kwh(2000) == pytest.approx((10 * 2000 + 209 * 40) / 60_000)
+    app = lm.Appliance("masina de spalat", 2000, "durata", (replace(washer, porniri_pe_saptamana=7),))
+    kwh, crit, _ = energy_kwh_per_day(app, n_days=56, dt_h=1 / 12)
+    assert kwh == pytest.approx(washer.run_kwh(2000), rel=0.03)
+    assert crit.max() == pytest.approx(2.0, abs=0.05) and np.mean(crit[crit > 0] < 0.1) > 0.8   # mostly the motor
+    assert lm.programs_from_json(lm.programs_to_json((washer,))) == (washer,)
+    for bad, text in [("10:2000 200:40", "durata_min"), ("10:3000 209:40", "putere_w"), ("10:abc 209:40", "numar")]:
+        with pytest.raises(ValueError, match=text):
+            lm.load_rows(write_csv(tmp_path / "d.csv", [
+                f"masina de spalat;;ales;da;oricand;durata;2000;9-21;219;1,3;toate;tot_anul;nu;x;{bad}"]))
+    tv = "tv;;toti;nu;oricand;interval;60;18-23;;;toate;tot_anul;nu;x;5:60"
+    with pytest.raises(ValueError, match="doar pentru tip = durata"):
+        lm.load_rows(write_csv(tmp_path / "d.csv", [tv]))

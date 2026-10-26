@@ -10,6 +10,7 @@ from typing import Literal
 import numpy as np
 
 from vpp_core.params import CommunityParams
+from vpp_core import thermal
 
 Weather = Literal["random", "clear", "cloudy"]
 LoadSource = Literal["dispozitive", "sintetic"]
@@ -30,14 +31,16 @@ class Scenario:
     price_p2p: np.ndarray      # (n_steps,) lei/kWh
     seed: int | None = None
     past: Scenario | None = field(default=None, repr=False)   # whole days right before `start` (meter history)
+    temp_out_c: np.ndarray | None = None   # (n_steps,) outdoor air temperature
+    solar_w_m2: np.ndarray | None = None   # (n_steps,) irradiance on the panels' plane
 
     def __post_init__(self) -> None:
         n_houses, n_steps = self.pv_kw.shape
         for name in ("load_crit_kw", "load_flex_kw"):
             if getattr(self, name).shape != (n_houses, n_steps):
                 raise ValueError(f"{name} must have shape {(n_houses, n_steps)}")
-        for name in ("price_import", "price_export", "price_p2p"):
-            if getattr(self, name).shape != (n_steps,):
+        for name in ("price_import", "price_export", "price_p2p", "temp_out_c", "solar_w_m2"):
+            if getattr(self, name) is not None and getattr(self, name).shape != (n_steps,):
                 raise ValueError(f"{name} must have shape {(n_steps,)}")
         for name in ("pv_kw", "load_crit_kw", "load_flex_kw"):
             if (getattr(self, name) < 0).any():
@@ -67,6 +70,12 @@ class Scenario:
     def load_kw(self) -> np.ndarray:
         return self.load_crit_kw + self.load_flex_kw
 
+    @property
+    def weather(self) -> thermal.Weather | None:
+        if self.temp_out_c is None or self.solar_w_m2 is None:
+            return None
+        return thermal.Weather(self.temp_out_c, self.solar_w_m2)
+
 
 def split_past(full: Scenario, past_days: int) -> Scenario:
     """The days of `full` after the first `past_days`, with those first days attached as `past`."""
@@ -79,7 +88,9 @@ def split_past(full: Scenario, past_days: int) -> Scenario:
     def part(columns: slice, start: date, past: Scenario | None) -> Scenario:
         return replace(full, start=start, past=past, **{
             name: getattr(full, name)[..., columns]
-            for name in ("pv_kw", "load_crit_kw", "load_flex_kw", "price_import", "price_export", "price_p2p")
+            for name in ("pv_kw", "load_crit_kw", "load_flex_kw", "price_import", "price_export", "price_p2p",
+                         "temp_out_c", "solar_w_m2")
+            if getattr(full, name) is not None
         })
 
     history = part(slice(None, cut), full.start, None)
@@ -128,6 +139,17 @@ def _sky_clearness(
     for t in range(1, n_steps):
         noise[t] = 0.8 * noise[t - 1] + rng.normal(0, 0.12)
     return np.clip(sky * np.exp(noise * (1.2 - sky)), 0.02, 1.0)
+
+
+def synthetic_temperature(day_doy: np.ndarray, hours: np.ndarray, spd: int, seed: int) -> np.ndarray:
+    """(n_steps,) °C: Bacau-like seasonal mean (-3 °C in January, 22 °C in July), +-4 °C a day peaking at 15:00,
+    and a daily anomaly that persists (AR(1)), from its own stream so PV, load and prices do not change."""
+    rng = np.random.default_rng([seed, 0x7E3])
+    anomaly = np.zeros(len(day_doy))
+    for d in range(len(day_doy)):
+        anomaly[d] = (0.7 * anomaly[d - 1] if d else 0.0) + rng.normal(0, 2.5)
+    mean = 9.5 - 12.5 * np.cos(2 * np.pi * (day_doy - 20) / 365) + anomaly
+    return np.repeat(mean, spd) + 4.0 * np.cos(2 * np.pi * (hours - 15) / 24)
 
 
 def _pv_profile(
@@ -212,9 +234,11 @@ def generate_scenario(
     critical, flexible = _load_profile(n_houses, n_days, spd, dt_h, hours, season, rng)
     if load_source == "dispozitive":
         from vpp_core.load_model import community_load  # here, so `-m vpp_core.load_model` runs clean
-
-        critical, flexible = community_load(community, start, n_days, dt_h, seed)
     price_import, price_export, price_p2p = _price_profile(hours, season, n_days, spd, p2p_price_factor, rng)
+    temp_out = synthetic_temperature(day_doy, hours, spd, seed)
+    solar = pv_clear_sky_per_kwp(hours, doy, latitude_deg) * sky / PERFORMANCE_RATIO * 1000
+    if load_source == "dispozitive":
+        critical, flexible = community_load(community, start, n_days, dt_h, seed, weather=thermal.Weather(temp_out, solar))
 
     return Scenario(
         dt_h=dt_h,
@@ -226,4 +250,6 @@ def generate_scenario(
         price_export=price_export,
         price_p2p=price_p2p,
         seed=seed,
+        temp_out_c=temp_out,
+        solar_w_m2=solar,
     )

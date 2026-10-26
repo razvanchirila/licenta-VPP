@@ -47,6 +47,7 @@ from vpp_core.params import BatteryParams, CommunityParams, GridParams, HousePar
 from vpp_core.scenario import Scenario, generate_scenario
 from vpp_core.scenario_real import generate_scenario_real
 from vpp_core.simulator import SimState, validate
+from vpp_core.thermal import Weather
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,8 @@ class SimulationLoop:
         self.house_ids: list[int] = []
         self.profiles = DeviceProfiles(self.dt_h)
         self.device_kw: dict[int, np.ndarray] = {}     # device id -> kW over the scenario window while on
+        self.temp_in: dict[int, np.ndarray] = {}       # house id -> indoor °C over the scenario window
+        self.weather: dict[date, Weather] = {}
         self.history: deque = deque(maxlen=HISTORY_SIZE)
         self.observations = Observations(self.dt_h)
         self.last_result: dict | None = None
@@ -405,6 +408,7 @@ class SimulationLoop:
                 part = generate_scenario(self.community, start=d, n_days=1, dt_h=self.dt_h, seed=seed,
                                          p2p_price_factor=self.config.p2p_price_factor, load_source="sintetic")
             parts.append(part)
+        self.weather = {d: part.weather for d, part in zip(self.window_days, parts, strict=True)}
 
         def cat(name: str) -> np.ndarray:
             return np.concatenate([getattr(p, name) for p in parts], axis=-1)
@@ -413,7 +417,7 @@ class SimulationLoop:
         return Scenario(
             dt_h=self.dt_h, start=day, pv_kw=cat("pv_kw"), load_crit_kw=empty, load_flex_kw=empty.copy(),
             price_import=cat("price_import"), price_export=cat("price_export"), price_p2p=cat("price_p2p"),
-            seed=parts[0].seed,
+            seed=parts[0].seed, temp_out_c=cat("temp_out_c"), solar_w_m2=cat("solar_w_m2"),
         )
 
     def _apply_device_load(self, houses: list[HouseModel]) -> None:
@@ -421,11 +425,14 @@ class SimulationLoop:
         controllers read only step t of it (the MPC forecasts the rest from Observations)."""
         days = self.window_days
         self.profiles.keep_days(days)
-        sc, kw = self.scenario, {}
+        sc, kw, temp = self.scenario, {}, {}
         for i, h in enumerate(houses):
-            kw.update(self.profiles.device_kw(h, days, self.config.seed))
+            kw.update(self.profiles.device_kw(h, days, self.config.seed, self.weather))
             sc.load_crit_kw[i], sc.load_flex_kw[i] = house_load(h, kw, sc.n_steps)
-        self.device_kw = kw
+            inside = self.profiles.temp_in(h, days, self.config.seed, self.weather)
+            if inside is not None:
+                temp[h.id] = inside
+        self.device_kw, self.temp_in = kw, temp
 
     async def step(self) -> dict:
         async with self.lock:
@@ -552,6 +559,7 @@ class SimulationLoop:
                 "exp_kw": round(float(d.exp[i]), 3), "p2p_in_kw": round(float(d.p2p_in[i]), 3),
                 "p2p_out_kw": round(float(d.p2p_out[i]), 3), "soc_kwh": round(soc, 3),
                 "soc_percent": round(100 * soc / cap, 1) if cap else None,
+                "temp_in_c": round(float(self.temp_in[h.id][inputs.t]), 1) if h.id in self.temp_in else None,
             })
         socs = [b.soc_kwh for b in self.batteries if b]
         caps = [hp.battery.capacity_kwh for hp in self.community.houses if hp.battery]

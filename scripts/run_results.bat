@@ -1,7 +1,7 @@
 @echo off
 REM Reface toate tabelele si graficele din results\ : sintetic, date reale cu preturi 2023 / 2025 / 2026,
 REM sensibilitate, consum, comparatia pe ani. Dureaza cam o ora si foloseste toate nucleele.
-REM Se ruleaza dupa ce se schimba backend\data\dispozitive.csv, gospodarii.csv sau modelul.
+REM Se ruleaza dupa ce se schimba backend\data\dispozitive.csv, case.csv sau modelul.
 REM Optional numarul de procese in paralel: run_results.bat 12 (cu multe nuclee si memorie putina).
 setlocal enabledelayedexpansion
 cd /d "%~dp0..\backend"

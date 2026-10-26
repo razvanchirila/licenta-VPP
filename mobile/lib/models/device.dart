@@ -3,50 +3,14 @@ import 'package:flutter_interface/models/json_utils.dart';
 
 class DeviceSchedule {
   final String mode;
-  final double hoursPerDay;
-  final double cyclesPerWeek;
-  final double cycleMinutes;
-  final String interval;
-  final String season;
+  final String text;
 
-  const DeviceSchedule({
-    required this.mode,
-    required this.hoursPerDay,
-    required this.cyclesPerWeek,
-    required this.cycleMinutes,
-    required this.interval,
-    required this.season,
-  });
+  const DeviceSchedule({required this.mode, required this.text});
 
   factory DeviceSchedule.fromJson(Map<String, dynamic> j) => DeviceSchedule(
-        mode: asString(j['mode'], 'continuu'),
-        hoursPerDay: asDouble(j['hours_per_day']),
-        cyclesPerWeek: asDouble(j['cycles_per_week']),
-        cycleMinutes: asDouble(j['cycle_minutes']),
-        interval: asString(j['interval']),
-        season: asString(j['season'], 'tot_anul'),
+        mode: asString(j['mode'], 'permanent'),
+        text: asString(j['text'], asString(j['mode'], 'permanent')),
       );
-
-  static const _seasons = {'tot_anul': 'tot anul', 'iarna': 'iarna', 'vara': 'vara'};
-
-  String get text {
-    switch (mode) {
-      case 'zilnic':
-        return '${_num(hoursPerDay)} h/zi, $interval';
-      case 'ciclic':
-        return '${_num(cyclesPerWeek)} cicluri/săpt × ${_num(cycleMinutes)} min, $interval';
-      case 'termic':
-        return 'termic, ${_seasons[season] ?? season}';
-      default:
-        return 'continuu';
-    }
-  }
-}
-
-String _num(double v) {
-  final rounded = (v * 10).round() / 10;
-  final s = rounded == rounded.roundToDouble() ? rounded.toInt().toString() : rounded.toStringAsFixed(1);
-  return s.replaceAll('.', ',');
 }
 
 class Device {

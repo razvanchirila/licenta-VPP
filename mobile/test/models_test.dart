@@ -162,7 +162,7 @@ void main() {
   });
 
   group('Device', () {
-    test('parses a seeded device with a cyclic schedule and current draw', () {
+    test('parses a seeded device with a schedule and current draw', () {
       final device = Device.fromJson({
         'id': 11,
         'house_id': 1,
@@ -170,40 +170,20 @@ void main() {
         'power_w': 2000.0,
         'critical': false,
         'status_on': true,
-        'schedule': {
-          'mode': 'ciclic',
-          'hours_per_day': 0.0,
-          'cycles_per_week': 7.0,
-          'cycle_minutes': 75.0,
-          'interval': '6-22',
-          'season': 'tot_anul',
-        },
+        'schedule': {'mode': 'durata', 'text': '7×75 min/săpt. 6-22'},
         'current_power_kw': 0.05,
         'accumulated_energy_kwh': 1.7724,
         'last_state_change_ts': '2026-09-26T21:45:00',
       });
-      expect(device.schedule!.mode, 'ciclic');
-      expect(device.schedule!.cyclesPerWeek, 7.0);
-      expect(device.scheduleText, '7 cicluri/săpt × 75 min, 6-22');
+      expect(device.schedule!.mode, 'durata');
+      expect(device.scheduleText, '7×75 min/săpt. 6-22');
       expect(device.currentPowerKw, 0.05);
       expect(device.currentDrawText, 'acum 0,05 kW');
       expect(device.lastStateChange, DateTime(2026, 9, 26, 21, 45));
     });
 
-    test('schedule wording per mode', () {
-      DeviceSchedule sc(String mode, {double h = 0, String season = 'tot_anul'}) => DeviceSchedule(
-            mode: mode,
-            hoursPerDay: h,
-            cyclesPerWeek: 0,
-            cycleMinutes: 0,
-            interval: '11-21',
-            season: season,
-          );
-      expect(sc('continuu').text, 'continuu');
-      expect(sc('zilnic', h: 0.8).text, '0,8 h/zi, 11-21');
-      expect(sc('zilnic', h: 5).text, '5 h/zi, 11-21');
-      expect(sc('termic', h: 5.5, season: 'iarna').text, 'termic, iarna');
-      expect(sc('termic', season: 'tot_anul').text, 'termic, tot anul');
+    test('schedule without text falls back to the mode', () {
+      expect(DeviceSchedule.fromJson({'mode': 'permanent'}).text, 'permanent');
     });
 
     test('manual device has no schedule and zero draw when missing', () {
