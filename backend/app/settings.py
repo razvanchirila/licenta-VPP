@@ -43,7 +43,7 @@ class Settings:
     )
     sim_controller: str = field(default_factory=lambda: os.getenv("SIM_CONTROLLER", "reguli"))
     sim_tick_seconds: float = field(default_factory=lambda: _env_float("SIM_TICK_SECONDS", 2.0))
-    sim_dt_hours: float = field(default_factory=lambda: _env_float("SIM_DT_HOURS", 0.25))
+    sim_step_minutes: int = field(default_factory=lambda: int(os.getenv("SIM_STEP_MINUTES", "5")))
     sim_seed: int = field(default_factory=lambda: int(os.getenv("SIM_SEED", "42")))
     sim_start_date: date = field(default_factory=lambda: _env_date("SIM_START_DATE"))
     sim_autostart: bool = field(default_factory=lambda: _env_bool("SIM_AUTOSTART", True))
@@ -51,6 +51,15 @@ class Settings:
     sim_price_year: int = field(default_factory=lambda: int(os.getenv("SIM_PRICE_YEAR", "2025")))
     initial_wallet_lei: float = field(default_factory=lambda: _env_float("INITIAL_WALLET_LEI", 100.0))
     operator_wallet_lei: float = field(default_factory=lambda: _env_float("OPERATOR_WALLET_LEI", 10000.0))
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.sim_step_minutes <= 60 or 1440 % self.sim_step_minutes:
+            raise ValueError(f"SIM_STEP_MINUTES = {self.sim_step_minutes}: trebuie sa imparta exact ziua "
+                             "(1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30 sau 60)")
+
+    @property
+    def sim_dt_hours(self) -> float:
+        return self.sim_step_minutes / 60
 
     def require_secret(self) -> None:
         if len(self.jwt_secret) < MIN_SECRET_LENGTH:

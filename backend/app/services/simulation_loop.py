@@ -1,5 +1,5 @@
 """
-Live simulation on top of vpp_core: one simulated step (dt_h, default 15 min) per real tick.
+Live simulation on top of vpp_core: one simulated step (dt_h, default 5 min) per real tick.
 Step order (SimulationLoop._step): community from the DB -> scenario slice (PV, prices) + load from the
 switched-on devices -> controller dispatch -> batteries -> P2P trades -> persist in one transaction ->
 advance clock and broadcast. With SIM_DATA=real the simulated calendar day is mapped to the same day of

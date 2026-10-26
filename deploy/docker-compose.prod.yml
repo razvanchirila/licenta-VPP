@@ -35,7 +35,7 @@ services:
       CORS_ORIGINS: https://${DOMAIN:?lipseste din .env}
       SIM_CONTROLLER: ${SIM_CONTROLLER:-reguli}
       SIM_TICK_SECONDS: ${SIM_TICK_SECONDS:-2}
-      SIM_DT_HOURS: ${SIM_DT_HOURS:-0.25}
+      SIM_STEP_MINUTES: ${SIM_STEP_MINUTES:-5}
       SIM_SEED: ${SIM_SEED:-42}
       SIM_START_DATE: ${SIM_START_DATE:-}
       SIM_AUTOSTART: ${SIM_AUTOSTART:-true}
