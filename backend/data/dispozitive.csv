@@ -1,20 +1,30 @@
-﻿dispozitiv;putere_w;mod;ore_pe_zi;cicluri_pe_saptamana;durata_ciclu_min;intervale;sezon;probabilitate;pe_persoana;flexibil
-frigider;45;continuu;;;;0-24;tot_anul;1;nu;nu
-congelator;35;continuu;;;;0-24;tot_anul;0,4;nu;nu
-router și standby;25;continuu;;;;0-24;tot_anul;1;nu;nu
-iluminat;90;zilnic;5;;;6-8:20 17-24:80;tot_anul;1;nu;nu
-televizor;100;zilnic;3;;;7-9:15 18-24:85;tot_anul;0,95;nu;nu
-laptop;60;zilnic;1,5;;;8-18:40 18-24:60;tot_anul;0,8;da;nu
-calculator de birou;200;zilnic;8;;;8-18;tot_anul;0,15;nu;nu
-plită electrică;1500;zilnic;0,25;;;7-9:20 12-14:30 18-21:50;tot_anul;0,6;da;nu
-cuptor cu microunde;1000;zilnic;0,1;;;7-9:30 12-14:30 18-22:40;tot_anul;0,7;da;nu
-cuptor electric;2000;ciclic;;0,8;45;12-14:30 17-20:70;tot_anul;0,6;da;nu
-aspirator;1500;ciclic;;2;30;9-20;tot_anul;0,9;nu;nu
-mașină de spălat;700;ciclic;;1,2;90;8-12:40 17-22:60;tot_anul;1;da;da
-uscător de rufe;1300;ciclic;;1;90;9-13:40 17-22:60;tot_anul;0,15;da;da
-mașină de vase;900;ciclic;;1,3;120;13-15:20 19-23:80;tot_anul;0,5;da;da
-boiler electric;2000;ciclic;;5;45;6-9:50 18-23:50;tot_anul;0,5;da;da
-pompă de căldură;2500;termic;6;;;0-24;iarna;0,25;nu;nu
-radiator electric;1500;termic;3;;;6-9:30 17-23:70;iarna;0,15;nu;nu
-aer condiționat;1000;termic;4;;;12-18:60 18-23:40;vara;0,5;nu;nu
-încărcare mașină electrică;7000;ciclic;;3;90;18-24:40 0-7:60;tot_anul;0,1;nu;da
+dispozitiv;moment;cine;pe_persoana;acasa;tip;putere_w;interval;durata_min;porniri_pe_saptamana;zile;sezon;flexibil;sursa;faze
+frigider;;toti;nu;oricand;permanent;21;;;;toate;tot_anul;nu;CE-frigidere;
+router;;toti;nu;oricand;permanent;10;;;;toate;tot_anul;nu;estimare;
+standby;;toti;nu;oricand;permanent;10;;;;toate;tot_anul;nu;CE-standby;
+iluminat;dimineata;toti;nu;oricand;interval;70;6-8;;;toate;iarna;nu;CE-iluminat;
+iluminat;seara;toti;nu;oricand;interval;70;17-23;;;toate;iarna;nu;CE-iluminat;
+iluminat;seara;toti;nu;oricand;interval;70;19-23;;;toate;intermediar;nu;CE-iluminat;
+iluminat;seara;toti;nu;oricand;interval;70;21-23;;;toate;vara;nu;CE-iluminat;
+televizor;seara;toti;nu;oricand;interval;60;18-23;;;toate;tot_anul;nu;CE-afisaje INS-2022;
+televizor;weekend;toti;nu;oricand;interval;60;10-14;;;weekend;tot_anul;nu;CE-afisaje INS-2022;
+televizor;zi;toti;nu;da;interval;60;11-15;;;lucru;tot_anul;nu;CE-afisaje presupunere;
+congelator;;ales;nu;oricand;permanent;24;;;;toate;tot_anul;nu;fisa-Aro;
+laptop;;ales;da;oricand;durata;30;17-23;150;7;toate;tot_anul;nu;CE-calculatoare;
+calculator birou;zi;ales;nu;da;interval;50;9-17;;;lucru;tot_anul;nu;CE-calculatoare;
+calculator birou;seara;ales;nu;nu;interval;50;19-23;;;toate;tot_anul;nu;CE-calculatoare presupunere;
+plita;cina;ales;nu;oricand;durata;1500;18-20;30;7;toate;tot_anul;nu;ACEEE-2000;
+plita;pranz;ales;nu;oricand;durata;1500;12-14;30;2;weekend;tot_anul;nu;ACEEE-2000 presupunere;
+plita;pranz;ales;nu;da;durata;1500;12-14;30;5;lucru;tot_anul;nu;ACEEE-2000 presupunere;
+microunde;dimineata;ales;nu;oricand;durata;1270;7-9;5;7;toate;tot_anul;nu;fisa-Bosch presupunere;
+microunde;seara;ales;nu;oricand;durata;1270;18-21;5;7;toate;tot_anul;nu;fisa-Bosch presupunere;
+cuptor electric;;ales;nu;oricand;durata;2000;17-20;30;2;toate;tot_anul;nu;fisa-Samsung presupunere;
+masina de spalat;;ales;da;oricand;durata;2000;9-21;219;1,3;toate;tot_anul;nu;UE-2019/2014 CE-spalat;10:2000 209:40
+uscator;;ales;da;oricand;durata;340;10-22;195;0,8;toate;tot_anul;nu;fisa-Bosch-uscator CE-uscatoare;
+masina de vase;;ales;da;oricand;durata;2000;19-23;180;1,7;toate;tot_anul;nu;CE-vase presupunere;20:40 10:2000 80:40 10:2000 60:40
+aspirator;;ales;nu;oricand;durata;900;9-13;45;1;weekend;tot_anul;nu;UE-666/2013;
+boiler;;ales;da;oricand;termic;1800;;;;toate;tot_anul;da;fisa-Ariston CE-boilere;
+aer conditionat;;ales;nu;oricand;termic;800;;;;toate;tot_anul;da;Eurovent;
+masina electrica;;ales;nu;oricand;durata;7400;18-7;200;3;toate;tot_anul;da;go-e EV-Database carVertical;
+pompa de caldura;;incalzire;nu;oricand;termic;2500;;;;toate;tot_anul;da;Daikin estimare;
+radiator electric;;incalzire;nu;oricand;termic;4000;;;;toate;tot_anul;da;fisa-Gorenje presupunere;

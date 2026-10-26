@@ -1,0 +1,28 @@
+cheie;sursa;link
+CE-frigidere;Comisia Europeana, Energy-efficient products: fridges and freezers (181 kWh/an media vanzarilor 2020);https://energy-efficient-products.ec.europa.eu/product-list/fridges-and-freezers_en
+CE-standby;Comisia Europeana, standby si networked standby, Reg. (UE) 2023/826;https://energy-efficient-products.ec.europa.eu/product-list/standby-networked-standby-and-mode_en
+CE-iluminat;Comisia Europeana, light sources (132 kWh/an pe gospodarie, 2,1 h/zi);https://energy-efficient-products.ec.europa.eu/product-list/light-sources_en
+CE-afisaje;Comisia Europeana, electronic displays (~51 W televizor mediu);https://energy-efficient-products.ec.europa.eu/product-list/electronic-displays_en
+CE-calculatoare;Comisia Europeana, computers (desktop 100 kWh/an, laptop 29 kWh/an);https://energy-efficient-products.ec.europa.eu/product-list/computers_en
+CE-spalat;Comisia Europeana, washing machines (174 cicluri/an);https://energy-efficient-products.ec.europa.eu/product-list/washing-machines_en
+CE-uscatoare;Comisia Europeana, tumble dryers (107 cicluri/an);https://energy-efficient-products.ec.europa.eu/product-list/tumble-dryers_en
+CE-vase;Comisia Europeana, dishwashers (~0,8 kWh/ciclu, 220 cicluri/an);https://energy-efficient-products.ec.europa.eu/product-list/dishwashers_en
+CE-boilere;Comisia Europeana, water heaters (32 l/persoana/zi la 60 °C);https://energy-efficient-products.ec.europa.eu/product-list/water-heaters_en
+UE-2019/2014;Regulamentul delegat (UE) 2019/2014 si Reg. (UE) 2019/2023, etichetarea masinilor de spalat (CELEX 32019R2014, 32019R2023);https://eur-lex.europa.eu/eli/reg_del/2019/2014/oj
+UE-666/2013;Regulamentul (UE) 666/2013, aspiratoare (sub 900 W);https://eur-lex.europa.eu/eli/reg/2013/666/oj
+INS-2022;INS, Conditiile de viata ale populatiei din Romania in anul 2022 (dotarea gospodariilor, marimea gospodariilor);https://insse.ro/cms/sites/default/files/field/publicatii/conditiile_de_viata_ale_populatiei_din_romania_in_anul_2022_0.pdf
+ACEEE-2000;ACEEE Summer Study 2000, Panel 1 Paper 24 (plita cu inductie ~0,9 kWh/zi);https://www.aceee.org/files/proceedings/2000/data/papers/SS00_Panel1_Paper24.pdf
+fisa-Samsung;fisa energetica Samsung NV75K3340RS (cuptor, 0,69–1,05 kWh/utilizare);https://images.samsung.com/is/content/samsung/p5/common/energylabel/common-energylabel-nv75k3340rs-eu-productfiche.pdf
+fisa-Bosch;Bosch FFL023MW0, cuptor cu microunde 800 W iesire / 1270 W absorbiti;https://storage.mtender.gov.md/get/7f07d9e8-0ee6-4fa1-aa76-d7983aa9dcc5-1618330639076
+fisa-Bosch-uscator;fisa EPREL 2114695, Bosch WQH245BWSN (1,10 kWh, 3 h 15 min);https://eprel.ec.europa.eu/fiches/tumbledryers20232534/Fiche_2114695_EN.pdf
+fisa-Aro;lada frigorifica Aro CF1900, 208 kWh/an;https://www.emag.ro/produs/pd/DXRPJCBBM/
+fisa-Ariston;Ariston Pro1 R Thermo 80 l, 1,8 kW;https://www.termix.ro/en/cumpara/electric-storage-water-heater-pro1-r-thermo-80-vts-vtd-with-exchange-11273
+fisa-Gorenje;convector Gorenje 2000MP, 2000 W (doua bucati in casa);https://www.emag.ro/convector-electric-gorenje-2000mp-2000w-24-nivele-de-putere-alb-43x92x24cm-731710/pd/DW8VK43BM/
+Daikin;Daikin Altherma 3 R 8 kW, COP 4,7 (A7/W35);https://groupsumi.es/en/climate-control/aerothermal-energy/aerothermal-sets/daikin-altherma-3-bibloc-aerothermal-set-8-kw-230-liters-ehvx08s23e6verga08evh7
+Eurovent;certificat Eurovent Daikin FTXM35R, 3,4 kW racire / 0,80 kW absorbiti;https://www.eurovent-certification.com/en/catalog/program/certificate/participant/model/show/201724435
+go-e;puterea incarcatoarelor de acasa (3,7 / 7,4 / 11 kW);https://go-e.com/en/magazine/single-phase-three-phase-ev-charging
+EV-Database;consum real masini electrice, 18,9 kWh/100 km;https://ev-database.org/cheatsheet/energy-consumption-electric-car
+carVertical;Romania Insider, kilometraj mediu in Romania (~20.300 km/an);https://www.romania-insider.com/romanians-among-europeans-driving-least-kilometers-annually-2024
+EN-ISO-13790;EN ISO 13790:2008, metoda orara simplificata (un nod termic) si clasele de capacitate termica (165 / 260 kJ/m2K), folosite in vpp_core/thermal.py;https://www.iso.org/standard/41974.html
+estimare;valoare estimata, fara sursa oficiala;
+presupunere;ales de noi pentru comunitatea studiata;

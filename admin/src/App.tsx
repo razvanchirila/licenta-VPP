@@ -8,6 +8,7 @@ import { RequireAuth } from './components/RequireAuth'
 import { ToastProvider } from './components/ToastProvider'
 import { HousesPage } from './pages/HousesPage'
 import { LoginPage } from './pages/LoginPage'
+import { NeighbourhoodPage } from './pages/NeighbourhoodPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { SimulationPage } from './pages/SimulationPage'
 
@@ -35,6 +36,7 @@ export function App() {
                   <Route path="case" element={<HousesPage />}>
                     <Route path=":houseId" element={<HouseDrawer />} />
                   </Route>
+                  <Route path="cartier" element={<NeighbourhoodPage />} />
                   <Route path="simulare" element={<SimulationPage />} />
                 </Route>
               </Route>

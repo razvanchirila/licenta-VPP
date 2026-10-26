@@ -27,6 +27,7 @@ from app.db.database import close_db, get_session_context  # noqa: E402
 from app.db.init_data import seed_houses  # noqa: E402
 from app.services import settlement  # noqa: E402
 from app.services.auth import create_access_token  # noqa: E402
+from app.services.simulation_loop import sim  # noqa: E402
 from app.services.users import create_user  # noqa: E402
 from app.settings import settings  # noqa: E402
 from main import app  # noqa: E402
@@ -147,17 +148,18 @@ def test_step_logs_energy_and_updates_soc(client, user3, admin):
 
     devices = client.get("/api/me/devices", headers=user3).json()
     dev = next(d for d in devices if d["id"] == device_id)
-    assert dev["accumulated_energy_kwh"] == pytest.approx(0.2 * 0.25)   # 200 W for 15 minutes
+    dt_h = sim.dt_h
+    assert dev["accumulated_energy_kwh"] == pytest.approx(0.2 * dt_h, abs=1e-4)   # 200 W for one step
     assert dev["current_power_kw"] == pytest.approx(0.2) and dev["schedule"] is None
     today = client.get("/api/me/energy/today", headers=user3).json()
-    assert today["steps"] == 1 and today["device_kwh"] == pytest.approx(house3["load_kw"] * 0.25, abs=1e-3)
+    assert today["steps"] == 1 and today["device_kwh"] == pytest.approx(house3["load_kw"] * dt_h, abs=1e-3)
     stats = client.get("/api/stats/summary?period=day", headers=user3).json()
-    assert stats["total_kwh"] == pytest.approx(house3["load_kw"] * 0.25, abs=1e-3)   # energy_logs add up to the load
+    assert stats["total_kwh"] == pytest.approx(house3["load_kw"] * dt_h, abs=1e-3)   # energy_logs add up to the load
     soc_after = client.get("/api/houses/3/battery", headers=user3).json()["soc_kwh"]
     assert soc_after == pytest.approx(house3["soc_kwh"], abs=1e-3)
     assert soc_after != soc_before or house3["ch_kw"] == 0 == house3["dis_kw"]
     status = client.get("/api/sim/status", headers=user3).json()
-    assert status["total_steps"] == 1 and status["sim_time"] == "00:15"
+    assert status["total_steps"] == 1 and status["sim_time"] == f"00:{settings.sim_step_minutes:02d}"
 
 
 def test_manual_trade_is_settled_atomically(client, admin):
@@ -333,7 +335,8 @@ def test_config_switches_controller_to_mpc(client, admin, user1):
 
 def test_prices_and_history(client, user1):
     prices = client.get("/api/sim/prices", headers=user1).json()
-    assert len(prices["prices"]) == 96 and prices["prices"][0]["price_import"] > prices["prices"][0]["price_p2p"]
+    assert len(prices["prices"]) == round(24 / sim.dt_h)
+    assert prices["prices"][0]["price_import"] > prices["prices"][0]["price_p2p"]
     history = client.get("/api/sim/history?limit=2", headers=user1).json()
     assert history["count"] == 2 and "community" in history["steps"][-1]
 
@@ -361,7 +364,7 @@ def test_energy_history_days_without_data_have_the_full_shape(client, user1):
 
 
 def test_chart_periods_and_bad_date(client, user1):
-    for period, minutes in (("day", 15), ("week", 180), ("month", 1440)):
+    for period, minutes in (("day", settings.sim_step_minutes), ("week", 180), ("month", 1440)):
         r = client.get(f"/api/me/energy/chart?period={period}", headers=user1)
         assert r.status_code == 200 and r.json()["interval_minutes"] == minutes, period
     assert client.get("/api/me/energy/chart?date=2025-13-40", headers=user1).status_code == 400

@@ -1,15 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_ws_user, require_admin
-from app.api.schemas import CreateUserRequest, ManualTradeRequest, UpdateUserRequest
+from app.api.schemas import CreateUserRequest, HouseSpecRequest, ManualTradeRequest, UpdateUserRequest
 from app.db.database import get_session
 from app.db.models import UserModel
-from app.db.repositories import UserRepository
-from app.services import users
+from app.db.repositories import HouseRepository, UserRepository
+from app.services import neighbourhood, users
 from app.services.serializers import trade_dict, user_dict
 from app.services.settlement import SettlementError, SettlementService, Trade
 from app.services.simulation_loop import sim
+from vpp_core.load_model import HouseSpec, load_catalog
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -19,6 +20,44 @@ async def _user_or_404(session: AsyncSession, user_id: str) -> UserModel:
     if user is None:
         raise HTTPException(404, "Utilizatorul nu exista")
     return user
+
+
+@router.get("/neighbourhood")
+async def get_neighbourhood(_: UserModel = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    catalog = load_catalog()
+    houses = await HouseRepository(session).get_all_with_relations()
+    return {"catalog": neighbourhood.catalog_view(catalog),
+            "houses": [neighbourhood.spec_dict(neighbourhood.spec_of(h, catalog)) for h in houses]}
+
+
+@router.put("/neighbourhood/{house_id}")
+async def update_house_spec(house_id: int, body: HouseSpecRequest, _: UserModel = Depends(require_admin),
+                            session: AsyncSession = Depends(get_session)):
+    house = await HouseRepository(session).get_by_id_with_relations(house_id)
+    if house is None:
+        raise HTTPException(404, "Casa nu exista")
+    spec = HouseSpec(house_id, body.description.strip(), body.people, body.home_daytime, body.heating.lower(),
+                     body.insulation.lower(), tuple(dict.fromkeys(name.lower() for name in body.devices)))
+    catalog = load_catalog()
+    try:
+        await neighbourhood.apply_spec(session, house, spec, catalog)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+    await session.refresh(house, ["devices"])
+    return neighbourhood.spec_dict(neighbourhood.spec_of(house, catalog))
+
+
+@router.post("/neighbourhood/reset")
+async def reset_neighbourhood(_: UserModel = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    await neighbourhood.reset_all(session, await HouseRepository(session).get_all_with_relations())
+    return {"message": "Cartierul a revenit la case.csv"}
+
+
+@router.get("/neighbourhood/export")
+async def export_neighbourhood(_: UserModel = Depends(require_admin), session: AsyncSession = Depends(get_session)):
+    text = neighbourhood.export_csv(await HouseRepository(session).get_all_with_relations())
+    return Response(text, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="case.csv"'})
 
 
 @router.get("/users")

@@ -12,7 +12,7 @@ from app.db.models import (
     WalletModel,
     WalletTransactionModel,
 )
-from vpp_core.load_model import describe_intervals, parse_intervals
+from vpp_core.load_model import Appliance, programs_from_json
 
 
 def user_dict(u: UserModel) -> dict:
@@ -29,9 +29,8 @@ def user_dict(u: UserModel) -> dict:
 def device_dict(d: DeviceModel) -> dict:
     schedule = None
     if d.mode:
-        schedule = {"mode": d.mode, "hours_per_day": d.hours_per_day, "cycles_per_week": d.cycles_per_week,
-                    "cycle_minutes": d.cycle_minutes, "interval": describe_intervals(parse_intervals(d.interval)),
-                    "season": d.season}
+        app = Appliance(d.name, d.power_w, d.mode, programs_from_json(d.program))
+        schedule = {"mode": d.mode, "text": app.describe()}
     return {
         "id": d.id,
         "house_id": d.house_id,
@@ -85,6 +84,11 @@ def house_dict(h: HouseModel, last_step: dict | None = None) -> dict:
         "mode": h.mode,
         "has_pv": h.has_pv,
         "pv_capacity_kw": h.pv_capacity_kw,
+        "description": h.description,
+        "people": h.people,
+        "home_daytime": h.home_daytime,
+        "heating": h.heating,
+        "insulation": h.insulation,
         "has_battery": h.battery is not None,
         "battery": battery_dict(h.battery, reserve) if h.battery else None,
         "devices": [device_dict(d) for d in devices],

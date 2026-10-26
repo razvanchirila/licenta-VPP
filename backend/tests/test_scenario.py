@@ -3,7 +3,7 @@ from datetime import date
 import numpy as np
 import pytest
 
-from vpp_core.load_model import compose_houses
+from vpp_core.load_model import community_load, compose_houses
 from vpp_core.params import default_community
 from vpp_core.scenario import generate_scenario
 
@@ -54,12 +54,14 @@ def test_pv_never_exceeds_installed_power():
 
 
 def test_daily_load_plausible():
-    """June: each house near the expected summer energy of its appliances (bounds were 4-16 for the old curve)."""
+    """June: the load is the houses' devices under the scenario's weather (bounds were 4-16 for the old curve)."""
     s = generate_scenario(C, n_days=14, seed=3)
     per_house_day = s.load_kw.sum(axis=1) * s.dt_h / 14
-    expected = [house.kwh_per_day("vara") for house in compose_houses(range(1, 11))]
-    np.testing.assert_allclose(per_house_day, expected, rtol=0.15)
-    assert (per_house_day > 2).all() and (per_house_day < 20).all()
+    crit, flex = community_load(C, s.start, 14, s.dt_h, 3, weather=s.weather)
+    np.testing.assert_allclose(s.load_kw, crit + flex)
+    appliances = [house.kwh_per_day("vara") for house in compose_houses(range(1, 11))]
+    assert (per_house_day >= np.array(appliances) * 0.85).all()          # plus cooling and hot water
+    assert (per_house_day > 2).all() and (per_house_day < 30).all()
     old = generate_scenario(C, n_days=14, seed=3, load_source="sintetic")
     per_house_day = old.load_kw.sum(axis=1) * old.dt_h / 14
     assert (per_house_day > 4).all() and (per_house_day < 16).all()

@@ -32,15 +32,6 @@ describe('format', () => {
 
   it('describes device schedules', () => {
     expect(scheduleText(null)).toBe('manual, cât e pornit')
-    expect(
-      scheduleText({
-        mode: 'zilnic',
-        hours_per_day: 5,
-        cycles_per_week: 0,
-        cycle_minutes: 0,
-        interval: '17-23',
-        season: 'tot_anul',
-      }),
-    ).toBe('5 h/zi, între 17-23')
+    expect(scheduleText({ mode: 'interval', text: '18-23; 10-14 weekend' })).toBe('18-23; 10-14 weekend')
   })
 })
