@@ -84,7 +84,9 @@ class DeviceModel(Base):
     accumulated_energy_kwh = Column(Float, nullable=False, default=0.0)
 
     house = relationship("HouseModel", back_populates="devices")
-    energy_logs = relationship("EnergyLogModel", back_populates="device", cascade="all, delete-orphan")
+    # the database deletes the logs (ON DELETE CASCADE); loading millions to delete one by one runs out of memory
+    energy_logs = relationship("EnergyLogModel", back_populates="device", cascade="all, delete-orphan",
+                               passive_deletes=True)
 
 
 class EnergyLogModel(Base):
