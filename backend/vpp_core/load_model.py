@@ -694,8 +694,8 @@ def print_rows(rows: list[dict]) -> None:
     for row in rows:
         print(f"{row['casa']:>4} {row['persoane']:>4} {row['dispozitive']:>4} {row['kwh_zi_iarna']:>7.1f} "
               f"{row['kwh_zi_intermediar']:>7.1f} {row['kwh_zi_vara']:>7.1f} {row['kwh_an']:>8.0f} "
-              f"{row['kwh_an_termic']:>7.0f} {row['varf_kw']:>6.1f} {row['temp_min_c']:>5.1f} {row['temp_max_c']:>5.1f} "
-              f"{100 * row['cota_flexibil']:>5.0f}%")
+              f"{row['kwh_an_termic']:>7.0f} {row['varf_kw']:>6.1f} {row['temp_min_c']:>5.1f} "
+              f"{row['temp_max_c']:>5.1f} {100 * row['cota_flexibil']:>5.0f}%")
     print()
     for row in rows:
         print(f"casa {row['casa']} ({row['descriere']}): {row['lista']}")

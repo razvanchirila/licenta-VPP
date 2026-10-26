@@ -9,8 +9,8 @@ from typing import Literal
 
 import numpy as np
 
-from vpp_core.params import CommunityParams
 from vpp_core import thermal
+from vpp_core.params import CommunityParams
 
 Weather = Literal["random", "clear", "cloudy"]
 LoadSource = Literal["dispozitive", "sintetic"]
@@ -238,7 +238,8 @@ def generate_scenario(
     temp_out = synthetic_temperature(day_doy, hours, spd, seed)
     solar = pv_clear_sky_per_kwp(hours, doy, latitude_deg) * sky / PERFORMANCE_RATIO * 1000
     if load_source == "dispozitive":
-        critical, flexible = community_load(community, start, n_days, dt_h, seed, weather=thermal.Weather(temp_out, solar))
+        critical, flexible = community_load(community, start, n_days, dt_h, seed,
+                                            weather=thermal.Weather(temp_out, solar))
 
     return Scenario(
         dt_h=dt_h,
