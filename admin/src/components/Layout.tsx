@@ -9,6 +9,7 @@ import styles from './Layout.module.css'
 const NAV = [
   { to: '/', label: 'Prezentare generală', end: true },
   { to: '/case', label: 'Case', end: false },
+  { to: '/cartier', label: 'Cartier', end: false },
   { to: '/simulare', label: 'Simulare', end: false },
 ]
 

@@ -236,3 +236,38 @@ def test_live_mpc_forecasts_from_the_recorded_steps_only(client, admin):
         assert client.post("/api/sim/step", headers=admin).json()["controller"] == "mpc"
     finally:
         client.post("/api/config/reset", headers=admin)
+
+
+def test_neighbourhood_editor_recomposes_a_house_and_resets_to_the_csv(client, admin):
+    catalog = lm.load_catalog()
+    view = client.get("/api/admin/neighbourhood", headers=admin).json()
+    assert view["catalog"]["heating"] == ["gaz", "pompa de caldura", "radiator electric"]
+    assert [set(h["devices"]) for h in view["houses"]] == [set(s.dispozitive) for s in catalog.houses]
+    assert view["houses"][0] == {"id": 1, "description": "pensionar singur", "people": 1, "home_daytime": True,
+                                 "heating": "gaz", "insulation": "veche",
+                                 "devices": ["microunde", "masina de spalat", "aspirator"]}
+    manual = client.post("/api/houses/1/devices", json={"name": "Lampa", "power_w": 40}, headers=admin).json()
+
+    body = {"description": "pensionar cu masina", "people": 2, "home_daytime": True, "heating": "pompa de caldura",
+            "insulation": "noua", "devices": ["microunde", "masina electrica"]}
+    r = client.put("/api/admin/neighbourhood/1", json=body, headers=admin)
+    assert r.status_code == 200, r.text
+    assert r.json()["devices"] == ["microunde", "masina electrica"]
+    house = client.get("/api/houses/1", headers=admin).json()
+    names = [d["name"] for d in house["devices"]]
+    assert "masina electrica" in names and "pompa de caldura" in names and "aspirator" not in names
+    assert "Lampa" in names                                                  # added by hand, kept
+    assert house["people"] == 2 and house["insulation"] == "noua"
+    row = _step_house(client, admin, 1, round(19 / DT_H))
+    assert row["load_kw"] > 0
+    assert "1;pensionar cu masina;2;da;pompa de caldura;noua;microunde,masina electrica" in \
+        client.get("/api/admin/neighbourhood/export", headers=admin).text
+
+    for bad in ({**body, "devices": ["sauna"]}, {**body, "heating": "lemne"}, {**body, "insulation": "paie"}):
+        assert client.put("/api/admin/neighbourhood/1", json=bad, headers=admin).status_code == 400
+    assert client.put("/api/admin/neighbourhood/99", json=body, headers=admin).status_code == 404
+    assert client.put("/api/admin/neighbourhood/1", json=body, headers=_login(client, "user1")).status_code == 403
+
+    assert client.post("/api/admin/neighbourhood/reset", headers=admin).status_code == 200
+    assert client.get("/api/admin/neighbourhood", headers=admin).json()["houses"] == view["houses"]
+    client.delete(f"/api/houses/1/devices/{manual['id']}", headers=admin)
