@@ -3,8 +3,9 @@ name: CI
 # feature/* -> PR -> develop (deploy pe staging) -> PR -> main (deploy in productie).
 # Job-urile rapide ruleaza doar cand s-a schimbat zona lor; build-ul Docker doar pe drumul spre productie.
 on:
+  # ramurile feature/* sunt verificate prin pull request; un push pe ele ar rula aceleasi teste a doua oara
   push:
-    branches: ["**"]
+    branches: [main, develop]
   pull_request:
   schedule:
     - cron: "0 4 * * 1"
