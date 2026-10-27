@@ -21,6 +21,8 @@ from app.api import (
 )
 from app.db.database import close_db, get_session_context, init_db
 from app.db.init_data import seed_houses
+from app.db.repositories import HouseRepository
+from app.services.neighbourhood import upgrade_old_devices
 from app.services.simulation_loop import sim
 from app.settings import settings
 
@@ -33,6 +35,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     async with get_session_context() as session:
         await seed_houses(session)
+        await upgrade_old_devices(session, await HouseRepository(session).get_all_with_relations())
     await sim.load()
     if settings.sim_autostart:
         await sim.start()

@@ -127,12 +127,8 @@ export interface Battery {
 }
 
 export interface DeviceSchedule {
-  mode: 'continuu' | 'zilnic' | 'ciclic' | 'termic'
-  hours_per_day: number
-  cycles_per_week: number
-  cycle_minutes: number
-  interval: string
-  season: 'tot_anul' | 'iarna' | 'vara'
+  mode: 'permanent' | 'interval' | 'durata' | 'termic'
+  text: string
 }
 
 export interface Device {
@@ -265,3 +261,18 @@ export type SocketMessage =
   | { type: 'connected'; status: SimStatus; last: StepResult | null }
   | { type: 'step'; data: StepResult; status: SimStatus }
   | { type: 'status'; status: SimStatus }
+
+export interface HouseSpec {
+  id: number
+  description: string
+  people: number
+  home_daytime: boolean
+  heating: string
+  insulation: string
+  devices: string[]
+}
+
+export interface Neighbourhood {
+  catalog: { optional: string[]; heating: string[]; insulation: string[]; always: string[] }
+  houses: HouseSpec[]
+}

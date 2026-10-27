@@ -259,6 +259,16 @@ def load_pv_kw_per_kwp() -> np.ndarray:
     return _read_hourly(PV_CSV, "pv_kw_per_kwp")
 
 
+def load_temperature_c() -> np.ndarray:
+    """(365, 24) air temperature at 2 m, °C (PVGIS, same hours as the PV)."""
+    return _read_hourly(PV_CSV, "t2m_c")
+
+
+def load_irradiance_w_m2() -> np.ndarray:
+    """(365, 24) irradiance on the panels' plane, W/m2."""
+    return _read_hourly(PV_CSV, "g_i_w_m2")
+
+
 def load_deer_weights() -> np.ndarray:
     """(96, 4) quarter-hour weights in DEER_COLUMNS order; each column sums to 1."""
     if not DEER_CSV.exists():

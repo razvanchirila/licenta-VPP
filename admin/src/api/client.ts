@@ -74,3 +74,26 @@ export async function request<T>(path: string, { method = 'GET', body, auth = tr
   if (!res.ok) throw new ApiError(res.status, errorMessage(data, res.status))
   return data as T
 }
+
+/** A text download (e.g. CSV) with the session token; errors as in request(). */
+export async function requestText(path: string): Promise<string> {
+  const token = loadToken()
+  if (!token) throw new ApiError(401, 'Neautentificat')
+  let res: Response
+  try {
+    res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } })
+  } catch {
+    throw new ApiError(0, 'Serverul nu răspunde')
+  }
+  const text = await res.text()
+  if (!res.ok) {
+    let body: unknown
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = null
+    }
+    throw new ApiError(res.status, errorMessage(body, res.status))
+  }
+  return text
+}

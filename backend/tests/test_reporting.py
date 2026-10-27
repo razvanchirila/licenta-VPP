@@ -1,17 +1,26 @@
 from vpp_core import evaluation, experiments, houses_report, sensitivity
-from vpp_core.optimizer import LPController, MPCController
+from vpp_core.optimizer import LPController, MPCController, RealisticMPCController
 from vpp_core.reporting import COLORS, LABELS, SHORT_LABELS
 
 
 def test_labels_cover_every_controller_name():
     names = set(evaluation.CONTROLLERS) | set(sensitivity.CONTROLLERS) | set(houses_report.CONTROLLERS)
-    names |= {c.name for c in experiments.baseline_controllers()} | {MPCController().name, LPController().name}
+    names |= {c.name for c in experiments.baseline_controllers()}
+    names |= {MPCController().name, RealisticMPCController().name, LPController().name}
     names |= {evaluation.make_controller(name, seed=0).name for name in evaluation.CONTROLLERS}
     assert names <= set(LABELS)
     assert set(SHORT_LABELS) == set(LABELS)
     assert set(COLORS) <= set(LABELS)
     assert len(set(LABELS.values())) == len(LABELS)
     assert LABELS["fara_baterie"].startswith("doar PV") and SHORT_LABELS["fara_baterie"] == "doar PV"
+
+
+def test_the_realistic_mpc_is_the_optimised_vpp():
+    assert RealisticMPCController().name == "mpc" and LABELS["mpc"] == "VPP optimizat (MPC)"
+    assert MPCController().name == "mpc_ideal" and LABELS["mpc_ideal"] == "MPC cu prognoză aproape perfectă"
+    assert evaluation.make_controller("mpc", seed=0).forecaster is not None
+    assert evaluation.make_controller("mpc_varf", seed=0).forecaster is not None
+    assert evaluation.make_controller("mpc_ideal", seed=0).forecaster is None
 
 
 def test_summary_csv_round_trip(tmp_path):

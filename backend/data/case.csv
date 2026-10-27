@@ -1,0 +1,11 @@
+casa;descriere;persoane;acasa_ziua;incalzire;izolatie;dispozitive
+1;pensionar singur;1;da;gaz;veche;microunde,masina de spalat,aspirator
+2;cuplu de pensionari;2;da;radiator electric;medie;microunde,masina de spalat,aspirator,congelator,aer conditionat,boiler,plita
+3;tanar singur, la birou;1;nu;gaz;medie;laptop,microunde,masina de spalat,congelator,uscator,aer conditionat,boiler,aspirator
+4;cuplu la birou;2;nu;pompa de caldura;medie;microunde,masina de spalat,aspirator,laptop,masina de vase,congelator,calculator birou,cuptor electric,plita,uscator,boiler,aer conditionat
+5;familie cu 2 copii, la birou;4;nu;gaz;medie;microunde,masina de spalat,aspirator,laptop,cuptor electric,boiler,uscator,masina de vase,congelator,aer conditionat
+6;familie, un parinte lucreaza de acasa;4;da;pompa de caldura;medie;microunde,masina de spalat,aspirator,laptop,calculator birou,cuptor electric,aer conditionat,masina de vase
+7;cuplu, lucreaza de acasa, are de toate;2;da;pompa de caldura;noua;microunde,masina de spalat,aspirator,congelator,laptop,calculator birou,plita,cuptor electric,uscator,masina de vase,boiler,aer conditionat,masina electrica
+8;familie mare, 6 persoane;6;da;pompa de caldura;medie;microunde,masina de spalat,aspirator,congelator,laptop,cuptor electric,boiler,uscator,masina de vase
+9;cuplu la birou, masina electrica;2;nu;pompa de caldura;noua;microunde,masina de spalat,aspirator,laptop,masina de vase,masina electrica,aer conditionat,boiler,cuptor electric,congelator,calculator birou,plita,uscator
+10;casa noua eficienta;2;nu;pompa de caldura;noua;microunde,masina de spalat,aspirator,laptop,plita,masina de vase,boiler,cuptor electric

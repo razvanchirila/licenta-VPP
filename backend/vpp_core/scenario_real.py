@@ -3,7 +3,8 @@ Scenario from real data (PVGIS, PZU via data_sources.py); sources in backend/dat
 PV and the calendar (weekdays, holidays, seasons of the load) are those of 2023; the PZU prices are taken
 from `price_year` at the same month, day and hour. The tariff components below are the 2026 ones for every
 price year.
-Load: the appliance list (load_source="dispozitive", backend/data/dispozitive.csv, see load_model.py) or the
+Load: the appliances of each house (load_source="dispozitive", catalog backend/data/dispozitive.csv, see
+load_model.py) or the
 DEER statistical profile scaled to an annual consumption ("deer").
 
     import  = (PZU + SUPPLY_MARGIN + NETWORK_ADDER) x (1 + VAT)
@@ -25,6 +26,7 @@ import numpy as np
 from vpp_core import data_sources as ds
 from vpp_core.params import CommunityParams
 from vpp_core.scenario import Scenario, _season, steps_per_day_of
+from vpp_core.thermal import Weather
 
 SUPPLY_MARGIN = 0.223       # lei/kWh, excl. VAT
 NETWORK_ADDER = 0.5345      # lei/kWh, excl. VAT
@@ -55,6 +57,15 @@ def resample_hourly(hourly: np.ndarray, dt_h: float) -> np.ndarray:
     if abs(hours_per_step - round(hours_per_step)) < 1e-9 and 24 % int(round(hours_per_step)) == 0:
         return flat.reshape(-1, int(round(hours_per_step))).mean(axis=1)
     raise ValueError("dt_h must be 1/k hours or a whole number of hours dividing 24")
+
+
+def real_weather(first_day: int, n_days: int, dt_h: float) -> Weather:
+    """PVGIS temperature (interpolated between the hour midpoints) and plane irradiance (energy kept per hour)."""
+    temp = ds.load_temperature_c()[first_day : first_day + n_days].ravel()
+    hours = np.arange(len(temp)) + 0.5
+    steps = (np.arange(round(len(temp) / dt_h)) + 0.5) * dt_h
+    solar = resample_hourly(ds.load_irradiance_w_m2()[first_day : first_day + n_days], dt_h)
+    return Weather(np.interp(steps, hours, temp), solar)
 
 
 def repeat_hourly(hourly: np.ndarray, dt_h: float) -> np.ndarray:
@@ -177,14 +188,15 @@ def generate_scenario_real(
     season = _season(doy)
 
     pv = _pv_from_pvgis(community, first_day, n_days, dt_h, spd, rng)
-    critical, flexible = _load_from_deer(
-        community.n_houses, days, dt_h, spd, season, annual_kwh_lo, annual_kwh_hi, rng
-    )
+    weather = real_weather(first_day, n_days, dt_h)
     if load_source == "dispozitive":
-        from vpp_core.load_model import DISPOZITIVE_CSV, community_load  # here, so `-m vpp_core.load_model` runs clean
+        from vpp_core.load_model import community_load  # here, so `-m vpp_core.load_model` runs clean
 
-        critical, flexible = community_load(community, DISPOZITIVE_CSV, start, n_days, dt_h, seed,
-                                            fallback=(critical, flexible))
+        critical, flexible = community_load(community, start, n_days, dt_h, seed, weather=weather)
+    else:
+        critical, flexible = _load_from_deer(
+            community.n_houses, days, dt_h, spd, season, annual_kwh_lo, annual_kwh_hi, rng
+        )
     price_import, price_export, price_p2p = _prices_from_pzu(
         start, n_days, dt_h, p2p_price_factor, export_rule, price_year
     )
@@ -199,4 +211,6 @@ def generate_scenario_real(
         price_export=price_export,
         price_p2p=price_p2p,
         seed=seed,
+        temp_out_c=weather.temp_out_c,
+        solar_w_m2=weather.solar_w_m2,
     )

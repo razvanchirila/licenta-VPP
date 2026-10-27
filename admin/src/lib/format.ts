@@ -50,21 +50,8 @@ export function formatHour(hour: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-const SEASONS: Record<DeviceSchedule['season'], string> = { tot_anul: 'tot anul', iarna: 'iarna', vara: 'vara' }
-
 export function scheduleText(schedule: DeviceSchedule | null): string {
-  if (!schedule) return 'manual, cât e pornit'
-  const n = (v: number) => formatNumber(v, Number.isInteger(v) ? 0 : 1)
-  switch (schedule.mode) {
-    case 'zilnic':
-      return `${n(schedule.hours_per_day)} h/zi, între ${schedule.interval}`
-    case 'ciclic':
-      return `${n(schedule.cycles_per_week)} cicluri/săpt. × ${n(schedule.cycle_minutes)} min, între ${schedule.interval}`
-    case 'termic':
-      return `termic, ${SEASONS[schedule.season] ?? schedule.season}`
-    default:
-      return 'continuu'
-  }
+  return schedule ? schedule.text : 'manual, cât e pornit'
 }
 
 export function dataSourceText(source: string | undefined, year: number | undefined): string {

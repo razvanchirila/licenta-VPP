@@ -7,7 +7,15 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.settings import settings
-from vpp_core.load_model import DISPOZITIVE_CSV, Appliance, by_house, format_interval, load_appliances
+from vpp_core.load_model import (
+    CASE_CSV,
+    DISPOZITIVE_CSV,
+    Appliance,
+    House,
+    compose_houses,
+    load_catalog,
+    programs_to_json,
+)
 from vpp_core.params import CommunityParams, default_community
 
 from .models import (
@@ -33,16 +41,18 @@ def _initial_tx(wallet: WalletModel, amount: float, sim_ts: datetime) -> WalletT
 def device_from_appliance(house: HouseModel, app: Appliance) -> DeviceModel:
     return DeviceModel(
         house=house, name=app.dispozitiv, power_w=app.putere_w, critical=not app.flexibil, status_on=True,
-        mode=app.mod, hours_per_day=app.ore_pe_zi, cycles_per_week=app.cicluri_pe_saptamana,
-        cycle_minutes=app.durata_ciclu_min, interval=format_interval(app.interval), season=app.sezon,
+        mode=app.tip, program=programs_to_json(app.programe),
     )
 
 
-def _appliances_by_house() -> dict[int, list[Appliance]]:
-    if not DISPOZITIVE_CSV.exists():
-        logger.warning("%s lipseste: casele pornesc fara dispozitive", DISPOZITIVE_CSV)
+def _composition_by_house(community: CommunityParams) -> dict[int, House]:
+    """The composition the simulator generates for each house id."""
+    missing = [path for path in (DISPOZITIVE_CSV, CASE_CSV) if not path.exists()]
+    if missing:
+        logger.warning("%s lipseste: casele pornesc fara dispozitive", ", ".join(map(str, missing)))
         return {}
-    return by_house(load_appliances(DISPOZITIVE_CSV))
+    houses = compose_houses((hp.id for hp in community.houses), load_catalog())
+    return {house.casa: house for house in houses}
 
 
 async def seed_houses(session: AsyncSession, community: CommunityParams | None = None) -> list[HouseModel]:
@@ -52,13 +62,18 @@ async def seed_houses(session: AsyncSession, community: CommunityParams | None =
         return list(existing)
 
     community = community or default_community()
-    appliances = _appliances_by_house()
+    compositions = _composition_by_house(community)
     sim_ts = datetime.combine(settings.sim_start_date, datetime.min.time())
     houses, n_devices = [], 0
     for hp in community.houses:
         house = HouseModel(id=hp.id, name=f"Casa {hp.id}", mode=hp.mode, has_pv=hp.pv_kwp > 0, pv_capacity_kw=hp.pv_kwp)
+        composition = compositions.get(hp.id)
+        if composition:
+            house.description, house.people = composition.descriere, composition.persoane
+            house.home_daytime, house.heating = composition.acasa_ziua, composition.incalzire
+            house.insulation = composition.izolatie
         session.add(house)
-        for app in appliances.get(hp.id, []):
+        for app in composition.appliances if composition else ():
             session.add(device_from_appliance(house, app))
             n_devices += 1
         if hp.battery:

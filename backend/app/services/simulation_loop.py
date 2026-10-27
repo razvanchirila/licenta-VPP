@@ -1,9 +1,11 @@
 """
-Live simulation on top of vpp_core: one simulated step (dt_h, default 15 min) per real tick.
+Live simulation on top of vpp_core: one simulated step (dt_h, default 5 min) per real tick.
 Step order (SimulationLoop._step): community from the DB -> scenario slice (PV, prices) + load from the
 switched-on devices -> controller dispatch -> batteries -> P2P trades -> persist in one transaction ->
 advance clock and broadcast. With SIM_DATA=real the simulated calendar day is mapped to the same day of
 the data: PV from 2023, prices from SIM_PRICE_YEAR; otherwise both come from the synthetic generator.
+The MPC forecasts from Observations, the readings of the steps already simulated (restored from house_steps
+after a restart), and from the prices published for today and, after 13:00, tomorrow.
 """
 from __future__ import annotations
 
@@ -39,11 +41,13 @@ from vpp_core import data_sources as ds
 from vpp_core.battery import Battery
 from vpp_core.controllers import RuleBasedController
 from vpp_core.dispatch import FLOWS, Dispatch
-from vpp_core.optimizer import MPCController
+from vpp_core.forecast import HISTORY_DAYS, History, published_steps
+from vpp_core.optimizer import RealisticMPCController
 from vpp_core.params import BatteryParams, CommunityParams, GridParams, HouseParams
 from vpp_core.scenario import Scenario, generate_scenario
 from vpp_core.scenario_real import generate_scenario_real
 from vpp_core.simulator import SimState, validate
+from vpp_core.thermal import Weather
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +129,62 @@ class StepInputs:
     price_p2p: float
 
 
-def make_controller(name: str, seed: int):
+def make_controller(name: str, history_source=None):
     if name == "mpc":
-        return MPCController(seed=seed, name="mpc")
+        return RealisticMPCController(name="mpc", history_source=history_source)
     return RuleBasedController(apply_alpha=True, name="reguli")
+
+
+class Observations:
+    """PV and load readings of the simulated steps and the prices they were settled at, per day; the only
+    past the MPC forecaster gets in the live loop (NaN where a house has no reading)."""
+
+    def __init__(self, dt_h: float, keep_days: int = HISTORY_DAYS):
+        self.dt_h = dt_h
+        self.keep_days = keep_days
+        self.readings: dict[date, dict[int, np.ndarray]] = {}   # day -> house id -> (2, spd) pv, load kW
+        self.prices: dict[date, np.ndarray] = {}                # day -> (3, spd) import, export, p2p
+
+    @property
+    def steps_per_day(self) -> int:
+        return round(24 / self.dt_h)
+
+    def clear(self) -> None:
+        self.readings.clear()
+        self.prices.clear()
+
+    def record(self, day: date, t: int, house_ids: list[int], pv_kw, load_kw, prices: tuple[float, ...]) -> None:
+        spd = self.steps_per_day
+        houses = self.readings.setdefault(day, {})
+        for i, house_id in enumerate(house_ids):
+            houses.setdefault(house_id, np.full((2, spd), np.nan))[:, t] = (pv_kw[i], load_kw[i])
+        self.prices.setdefault(day, np.full((3, spd), np.nan))[:, t] = prices
+        oldest = max(self.readings) - timedelta(days=self.keep_days)
+        for store in (self.readings, self.prices):
+            for old in [d for d in store if d < oldest]:
+                del store[old]
+
+    def history(self, day: date, t: int, house_ids: list[int], scenario: Scenario, delay_steps: int = 1) -> History:
+        """History of step t of `day`; `scenario` (today and tomorrow) gives only the published prices."""
+        spd = self.steps_per_day
+        start = day - timedelta(days=self.keep_days)
+        now = self.keep_days * spd + t
+        readings = np.full((2, len(house_ids), now + spd), np.nan)
+        prices = np.full((3, self.keep_days * spd), np.nan)
+        for k in range(self.keep_days + 1):
+            d = start + timedelta(days=k)
+            for i, house_id in enumerate(house_ids):
+                if house_id in self.readings.get(d, {}):
+                    readings[:, i, k * spd:(k + 1) * spd] = self.readings[d][house_id]
+            if k < self.keep_days and d in self.prices:
+                prices[:, k * spd:(k + 1) * spd] = self.prices[d]
+        n_obs = now + 1 - delay_steps
+        n_today = published_steps(start, now, self.dt_h) - self.keep_days * spd
+        published = [np.concatenate([prices[j], getattr(scenario, name)[:n_today]])
+                     for j, name in enumerate(("price_import", "price_export", "price_p2p"))]
+        return History(start=start, dt_h=self.dt_h, now=now, pv_kw=readings[0, :, :n_obs],
+                       load_kw=readings[1, :, :n_obs], price_import=published[0], price_export=published[1],
+                       price_p2p=published[2])
 
 
 def community_from_houses(houses: list[HouseModel], grid: GridParams, min_p2p_balance: float) -> CommunityParams:
@@ -181,7 +237,10 @@ class SimulationLoop:
         self.house_ids: list[int] = []
         self.profiles = DeviceProfiles(self.dt_h)
         self.device_kw: dict[int, np.ndarray] = {}     # device id -> kW over the scenario window while on
+        self.temp_in: dict[int, np.ndarray] = {}       # house id -> indoor °C over the scenario window
+        self.weather: dict[date, Weather] = {}
         self.history: deque = deque(maxlen=HISTORY_SIZE)
+        self.observations = Observations(self.dt_h)
         self.last_result: dict | None = None
         self.lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -230,6 +289,7 @@ class SimulationLoop:
             state = await session.get(SimulationStateModel, 1)
             if state is not None:
                 self._restore_state(state)
+            await self._restore_observations(session)
             self._sync(await HouseRepository(session).get_all_with_relations())
         self.loaded = True
         logger.info("Simulation loaded: %d houses, controller %s, sim time %s",
@@ -248,6 +308,25 @@ class SimulationLoop:
             self.day = state.sim_datetime.date()
             minutes = state.sim_datetime.hour * 60 + state.sim_datetime.minute
             self.t = min(round(minutes / (self.dt_h * 60)), self.steps_per_day - 1)
+
+    async def _restore_observations(self, session: AsyncSession) -> None:
+        """The readings of the last days from house_steps, so the MPC keeps its history after a restart."""
+        self.observations.clear()
+        first = self._clock_at(self.day - timedelta(days=self.observations.keep_days), 0)
+        rows = (await session.execute(
+            select(HouseStepModel).where(HouseStepModel.sim_timestamp >= first,
+                                         HouseStepModel.sim_timestamp < self.sim_datetime)
+            .order_by(HouseStepModel.sim_timestamp)
+        )).scalars()
+        for row in rows:
+            ts = row.sim_timestamp
+            t = round((ts.hour * 60 + ts.minute) / (self.dt_h * 60))
+            if t < self.steps_per_day:
+                self.observations.record(ts.date(), t, [row.house_id], [row.pv_kw], [row.load_kw],
+                                         (row.price_import, row.price_export, row.price_p2p))
+
+    def _history(self, t: int) -> History:
+        return self.observations.history(self.day, t, self.house_ids, self.scenario)
 
     async def start(self) -> None:
         if self.running:
@@ -296,7 +375,7 @@ class SimulationLoop:
             self.scenario = self._build_scenario(self.day)
             self.scenario_key = key
         if self.controller is None or getattr(self.controller, "name", None) != self.config.controller:
-            self.controller = make_controller(self.config.controller, self.config.seed)
+            self.controller = make_controller(self.config.controller, self._history)
             rebuild = True
         if rebuild:
             self.controller.reset(self.community, self.scenario)
@@ -329,6 +408,7 @@ class SimulationLoop:
                 part = generate_scenario(self.community, start=d, n_days=1, dt_h=self.dt_h, seed=seed,
                                          p2p_price_factor=self.config.p2p_price_factor, load_source="sintetic")
             parts.append(part)
+        self.weather = {d: part.weather for d, part in zip(self.window_days, parts, strict=True)}
 
         def cat(name: str) -> np.ndarray:
             return np.concatenate([getattr(p, name) for p in parts], axis=-1)
@@ -337,19 +417,22 @@ class SimulationLoop:
         return Scenario(
             dt_h=self.dt_h, start=day, pv_kw=cat("pv_kw"), load_crit_kw=empty, load_flex_kw=empty.copy(),
             price_import=cat("price_import"), price_export=cat("price_export"), price_p2p=cat("price_p2p"),
-            seed=parts[0].seed,
+            seed=parts[0].seed, temp_out_c=cat("temp_out_c"), solar_w_m2=cat("solar_w_m2"),
         )
 
     def _apply_device_load(self, houses: list[HouseModel]) -> None:
-        """Scenario load over the window = the switched-on devices as they are now (the MPC forecast
-        assumes they keep their state); written in place so the controller sees it without a reset."""
+        """Scenario load over the window = the switched-on devices as they are now; written in place. The
+        controllers read only step t of it (the MPC forecasts the rest from Observations)."""
         days = self.window_days
         self.profiles.keep_days(days)
-        sc, kw = self.scenario, {}
+        sc, kw, temp = self.scenario, {}, {}
         for i, h in enumerate(houses):
-            kw.update(self.profiles.device_kw(h, days, self.config.seed))
+            kw.update(self.profiles.device_kw(h, days, self.config.seed, self.weather))
             sc.load_crit_kw[i], sc.load_flex_kw[i] = house_load(h, kw, sc.n_steps)
-        self.device_kw = kw
+            inside = self.profiles.temp_in(h, days, self.config.seed, self.weather)
+            if inside is not None:
+                temp[h.id] = inside
+        self.device_kw, self.temp_in = kw, temp
 
     async def step(self) -> dict:
         async with self.lock:
@@ -374,6 +457,8 @@ class SimulationLoop:
                     if b is not None:
                         b.soc_kwh = soc
                 raise
+        self.observations.record(self.day, inputs.t, self.house_ids, inputs.pv_kw, inputs.load_kw,
+                                 (inputs.price_import, inputs.price_export, inputs.price_p2p))
         result = self._result(houses, inputs, dispatch, settled)
         day = self.day
         self._advance_clock(result)
@@ -474,6 +559,7 @@ class SimulationLoop:
                 "exp_kw": round(float(d.exp[i]), 3), "p2p_in_kw": round(float(d.p2p_in[i]), 3),
                 "p2p_out_kw": round(float(d.p2p_out[i]), 3), "soc_kwh": round(soc, 3),
                 "soc_percent": round(100 * soc / cap, 1) if cap else None,
+                "temp_in_c": round(float(self.temp_in[h.id][inputs.t]), 1) if h.id in self.temp_in else None,
             })
         socs = [b.soc_kwh for b in self.batteries if b]
         caps = [hp.battery.capacity_kwh for hp in self.community.houses if hp.battery]
@@ -558,6 +644,7 @@ class SimulationLoop:
                 houses = await HouseRepository(session).get_all_with_relations()
             self.day, self.t, self.total_steps = settings.sim_start_date, 0, 0
             self.history.clear()
+            self.observations.clear()
             self.last_result = None
             self.last_error = None
             self.batteries, self.house_ids, self.community, self.scenario = [], [], None, None

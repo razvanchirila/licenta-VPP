@@ -100,3 +100,12 @@ class ConfigUpdate(BaseModel):
     p2p_price_factor: float | None = Field(default=None, gt=0, le=1, allow_inf_nan=False)
     min_p2p_balance_lei: float | None = Field(default=None, ge=0, le=10_000, allow_inf_nan=False)
     seed: int | None = Field(default=None, ge=0)
+
+
+class HouseSpecRequest(BaseModel):
+    description: str = Field(default="", max_length=200)
+    people: int = Field(ge=1, le=12)
+    home_daytime: bool
+    heating: str = Field(min_length=1, max_length=50)
+    insulation: str = Field(min_length=1, max_length=10)
+    devices: list[str] = Field(default_factory=list, max_length=50)

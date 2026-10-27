@@ -1,13 +1,15 @@
-import { request } from './client'
+import { request, requestText } from './client'
 import type {
   DayPrices,
   Device,
   EditableConfig,
   House,
   HouseMode,
+  HouseSpec,
   LoginResponse,
   Me,
   MessageResponse,
+  Neighbourhood,
   SimConfig,
   SimStatus,
   StepResult,
@@ -42,6 +44,12 @@ export const api = {
     request<MessageResponse & { mode: HouseMode }>(`/api/houses/${houseId}/mode`, { method: 'POST', body: { mode } }),
   toggleDevice: (houseId: number, deviceId: number) =>
     request<Device>(`/api/houses/${houseId}/devices/${deviceId}/toggle`, { method: 'POST' }),
+
+  neighbourhood: () => request<Neighbourhood>('/api/admin/neighbourhood'),
+  saveHouseSpec: ({ id, ...body }: HouseSpec) =>
+    request<HouseSpec>(`/api/admin/neighbourhood/${id}`, { method: 'PUT', body }),
+  resetNeighbourhood: () => request<MessageResponse>('/api/admin/neighbourhood/reset', { method: 'POST' }),
+  exportNeighbourhood: () => requestText('/api/admin/neighbourhood/export'),
 
   config: () => request<SimConfig>('/api/config'),
   updateConfig: (changes: Partial<EditableConfig>) =>

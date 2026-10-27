@@ -1,6 +1,8 @@
 """
 LP dispatch of the community (HiGHS), used with perfect foresight (LPController) or in a
-rolling horizon with forecasts (MPCController). Variables in kW, soc in kWh, objective in lei:
+rolling horizon with forecasts (MPCController: the true future plus noise; RealisticMPCController:
+forecasts from past readings and published prices only, see forecast.py). Variables in kW, soc in kWh,
+objective in lei:
 
     min  sum_t dt * sum_h [ price_import * imp - price_export * exp
                             + deg_cost * (ch + dis) + voll * shed + eps * (curtail + p2p_out) ]
@@ -12,6 +14,7 @@ billing period, so only the increment above it is charged.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import highspy
@@ -19,6 +22,7 @@ import numpy as np
 
 from vpp_core.controllers import Controller
 from vpp_core.dispatch import Dispatch
+from vpp_core.forecast import History, RealisticForecaster
 from vpp_core.params import CommunityParams, GridParams
 from vpp_core.scenario import Scenario
 from vpp_core.simulator import SimState
@@ -316,14 +320,82 @@ def noisy_forecast(actual: np.ndarray, t: int, sigma_day: float, steps_per_day: 
     return np.clip(actual[:, t:] * (1 + relative_error), 0, None)
 
 
+REALISATIONS = ("exchange", "battery")
+
+
+def realise(plan: Dispatch, community: CommunityParams, pv: np.ndarray, load: np.ndarray, price_export: float,
+            state: SimState, dt_h: float, forecast_error: np.ndarray | None = None) -> Dispatch:
+    """A plan made on forecasts, applied to the PV and load measured in the step. With forecast_error =
+    (load - load forecast) - (pv - pv forecast) per house, the battery takes that error on top of its set-point
+    (as far as it can), so the house exchanges with the others and the grid what was planned, like a hybrid
+    inverter following an exchange target; without it the battery set-points are kept and the grid takes the
+    error. Then kept inside the limits the simulator checks: inverter (curtail PV, then less discharge or
+    charge), community export or a negative export price (curtail, then less discharge), community import
+    (less charge, more discharge, then shed). P2P is the ex-post sharing of the measured surpluses and
+    deficits, pro rata, as an energy community settles it."""
+    grid = community.grid
+    inverter = np.array([house.inverter_kw for house in community.houses])
+    p2p_allowed = np.array([house.p2p_enabled for house in community.houses], dtype=float)
+    max_ch, max_dis = state.max_charge_kw(dt_h), state.max_discharge_kw(dt_h)
+    if forecast_error is None:
+        ch, dis = np.clip(plan.ch, 0, max_ch), np.clip(plan.dis, 0, max_dis)
+    else:
+        battery = plan.ch - plan.dis - forecast_error
+        ch, dis = np.clip(battery, 0, max_ch), np.clip(-battery, 0, max_dis)
+
+    # (pv - curtail) + dis - ch <= inverter  and  ch - dis - (pv - curtail) <= inverter
+    over = pv + dis - ch - inverter
+    curtail = np.clip(np.minimum(over, pv), 0, None)
+    dis = dis - np.clip(over - curtail, 0, None)
+    ch = ch - np.clip(ch - dis - (pv - curtail) - inverter, 0, None)
+
+    net = load - (pv - curtail) + ch - dis
+    deficit, surplus = np.clip(net, 0, None), np.clip(-net, 0, None)
+    offered, wanted = surplus * p2p_allowed, deficit * p2p_allowed
+    traded = min(offered.sum(), wanted.sum(), grid.internal_line_kw)
+    p2p_out = offered * (traded / offered.sum()) if traded > 0 else np.zeros_like(net)
+    p2p_in = wanted * (traded / wanted.sum()) if traded > 0 else np.zeros_like(net)
+    imp, exp = deficit - p2p_in, surplus - p2p_out
+
+    if price_export < 0:
+        cut = exp.copy()
+    elif exp.sum() > grid.export_max_kw:
+        cut = exp * (1 - grid.export_max_kw / exp.sum())
+    else:
+        cut = np.zeros_like(exp)
+    from_pv = np.minimum(cut, pv - curtail)
+    curtail, dis, exp = curtail + from_pv, dis - (cut - from_pv), exp - cut
+
+    shed = np.zeros_like(net)
+    if imp.sum() > grid.import_max_kw:
+        cut = imp * (1 - grid.import_max_kw / imp.sum())
+        less_charge = np.minimum(cut, ch)
+        ch = ch - less_charge
+        room = np.clip(np.minimum(max_dis - dis, inverter - ((pv - curtail) + dis - ch)), 0, None)
+        more_discharge = np.minimum(cut - less_charge, room)
+        dis, imp = dis + more_discharge, imp - cut
+        shed = cut - less_charge - more_discharge
+    return Dispatch(curtail=curtail, shed=shed, ch=ch, dis=dis, imp=imp, exp=exp, p2p_in=p2p_in, p2p_out=p2p_out)
+
+
 class MPCController(Controller):
     """Rolling horizon: forecast, solve the LP, apply the first step, repeat.
-    Each window must end with soc >= initial soc. billing_period_days=None means the peak
-    memory (peak_floor) covers the whole run; peak_memory=False pays each window's peak from zero."""
+    Each window must end with soc >= initial soc, or >= the current soc when that is out of reach.
+    billing_period_days=None means the peak memory (peak_floor) covers the whole run; peak_memory=False
+    pays each window's peak from zero.
+    Without a forecaster the forecast is the true future with noise (noisy_forecast: exact at step t,
+    prices known for the whole horizon), the near-perfect reference. With a RealisticForecaster the LP
+    sees only forecaster.predict(History) and the plan's first step goes through realise();
+    history_source replaces the scenario as the source of the History (the live loop); realisation picks
+    what absorbs the forecast error of the step (REALISATIONS: the battery or the grid, see realise)."""
 
     def __init__(self, horizon_h: float = 24.0, pv_error: float = 0.3, load_error: float = 0.2,
-                 weights: LPWeights = LPWeights(), seed: int = 0, name: str = "mpc",
-                 billing_period_days: int | None = None, peak_memory: bool = True):
+                 weights: LPWeights = LPWeights(), seed: int = 0, name: str = "mpc_ideal",
+                 billing_period_days: int | None = None, peak_memory: bool = True,
+                 forecaster: RealisticForecaster | None = None,
+                 history_source: Callable[[int], History] | None = None, realisation: str = "exchange"):
+        if realisation not in REALISATIONS:
+            raise ValueError(f"realisation must be one of {REALISATIONS}")
         self.horizon_h = horizon_h
         self.pv_error = pv_error          # relative std of the forecast error after 24 h
         self.load_error = load_error
@@ -332,6 +404,9 @@ class MPCController(Controller):
         self.name = name
         self.billing_period_days = billing_period_days
         self.peak_memory = peak_memory
+        self.forecaster = forecaster
+        self.history_source = history_source
+        self.realisation = realisation
         self.peak_so_far_kw = 0.0
 
     def reset(self, community: CommunityParams, scenario: Scenario) -> None:
@@ -339,25 +414,68 @@ class MPCController(Controller):
         self.rng = np.random.default_rng(self.seed)
         self.terminal_target = np.array([house.initial_soc_kwh for house in community.houses])
         self.peak_so_far_kw = 0.0
+        if self.forecaster is not None:
+            self.forecaster.reset(community)
+
+    def _window_end(self, t: int) -> int:
+        return min(self.scenario.n_steps, t + max(1, round(self.horizon_h / self.scenario.dt_h)))
 
     def _forecast_window(self, t: int) -> tuple[int, np.ndarray, np.ndarray]:
         scenario = self.scenario
-        end = min(scenario.n_steps, t + max(1, round(self.horizon_h / scenario.dt_h)))
+        end = self._window_end(t)
         pv = noisy_forecast(scenario.pv_kw[:, :end], t, self.pv_error, scenario.steps_per_day, self.rng)
         load = noisy_forecast(scenario.load_kw[:, :end], t, self.load_error, scenario.steps_per_day, self.rng)
         return end, pv, load
+
+    def _inputs(self, t: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """(pv, load, price_import, price_export) the LP sees for the window that starts at t."""
+        scenario = self.scenario
+        if self.forecaster is None:
+            end, pv, load = self._forecast_window(t)
+            return pv, load, scenario.price_import[t:end], scenario.price_export[t:end]
+        end = self._window_end(t)
+        history = self.history_source(t) if self.history_source else self.forecaster.observe(scenario, t)
+        forecast = self.forecaster.predict(history, end - t)
+        perfect = self.forecaster.perfect
+        return (
+            scenario.pv_kw[:, t:end] if "pv" in perfect else forecast.pv_kw,
+            scenario.load_kw[:, t:end] if "load" in perfect else forecast.load_kw,
+            scenario.price_import[t:end] if "price" in perfect else forecast.price_import,
+            scenario.price_export[t:end] if "price" in perfect else forecast.price_export,
+        )
 
     def dispatch(self, state: SimState) -> Dispatch:
         scenario, t = self.scenario, state.t
         if self.billing_period_days and t % (self.billing_period_days * scenario.steps_per_day) == 0:
             self.peak_so_far_kw = 0.0
-        end, pv, load = self._forecast_window(t)
-        solution = solve_dispatch(
-            self.community, pv, load, scenario.price_import[t:end], scenario.price_export[t:end],
-            scenario.dt_h, state.soc_kwh, self.weights, terminal_soc=self.terminal_target,
-            peak_floor=self.peak_so_far_kw if self.peak_memory else 0.0,
-        )
+        pv, load, price_import, price_export = self._inputs(t)
+        args = (self.community, pv, load, price_import, price_export, scenario.dt_h, state.soc_kwh, self.weights)
+        peak_floor = self.peak_so_far_kw if self.peak_memory else 0.0
+        try:
+            solution = solve_dispatch(*args, terminal_soc=self.terminal_target, peak_floor=peak_floor)
+        except RuntimeError:
+            # a short window at the end of the run cannot always refill a battery the forecast errors emptied;
+            # not ending below the current SOC is always feasible (battery idle)
+            target = np.minimum(self.terminal_target, state.soc_kwh)
+            solution = solve_dispatch(*args, terminal_soc=target, peak_floor=peak_floor)
         dispatch = Dispatch.from_flows(solution.flows, 0)
+        if self.forecaster is not None and not {"pv", "load"} <= set(self.forecaster.perfect):
+            actual_pv, actual_load = scenario.pv_kw[:, t], scenario.load_kw[:, t]
+            error = (actual_load - load[:, 0]) - (actual_pv - pv[:, 0]) if self.realisation == "exchange" else None
+            dispatch = realise(dispatch, self.community, actual_pv, actual_load, float(scenario.price_export[t]),
+                               state, scenario.dt_h, error)
         # the simulator applies the dispatch unchanged (clip at 0 only), so this is the realised import
         self.peak_so_far_kw = max(self.peak_so_far_kw, float(np.clip(dispatch.imp, 0, None).sum()))
         return dispatch
+
+
+class RealisticMPCController(MPCController):
+    """The MPC an operator can actually run: RealisticForecaster (forecast.py) unless another is given."""
+
+    def __init__(self, horizon_h: float = 24.0, weights: LPWeights = LPWeights(), name: str = "mpc",
+                 billing_period_days: int | None = None, peak_memory: bool = True,
+                 forecaster: RealisticForecaster | None = None,
+                 history_source: Callable[[int], History] | None = None, realisation: str = "exchange"):
+        super().__init__(horizon_h=horizon_h, weights=weights, name=name, billing_period_days=billing_period_days,
+                         peak_memory=peak_memory, forecaster=forecaster or RealisticForecaster(),
+                         history_source=history_source, realisation=realisation)
