@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.init_data import device_from_appliance
@@ -70,9 +71,11 @@ def export_csv(houses: list[HouseModel]) -> str:
 
 async def upgrade_old_devices(session: AsyncSession, houses: list[HouseModel]) -> int:
     """Houses seeded with the old catalog (modes continuu / zilnic / ciclic, no program) get their composition
-    from case.csv again; returns how many."""
+    from case.csv again; returns how many. The per-device energy logs are emptied first: deleting millions of
+    them row by row outlasts the health check, and the old devices they belong to are gone anyway."""
     old = [h for h in houses if any(d.mode and (d.mode not in TIPURI or d.program == "[]") for d in h.devices)]
     if old:
+        await session.execute(text("TRUNCATE energy_logs"))
         await reset_all(session, old)
         logging.getLogger(__name__).info("Casele %s au primit dispozitivele din case.csv", [h.id for h in old])
     return len(old)

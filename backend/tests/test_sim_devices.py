@@ -6,11 +6,12 @@ are triggered by hand.
 import asyncio
 import logging
 import os
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 import pytest
 from conftest import api_database_url, recreate_tables
+from sqlalchemy import text
 
 os.environ.update({
     "DATABASE_URL": api_database_url(),
@@ -24,7 +25,10 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.db.database import close_db, get_session_context  # noqa: E402
 from app.db.init_data import seed_houses  # noqa: E402
+from app.db.models import EnergyLogModel  # noqa: E402
+from app.db.repositories import HouseRepository  # noqa: E402
 from app.services import simulation_loop  # noqa: E402
+from app.services.neighbourhood import upgrade_old_devices  # noqa: E402
 from app.services.simulation_loop import data_day, sim  # noqa: E402
 from app.services.users import create_user  # noqa: E402
 from main import app  # noqa: E402
@@ -271,3 +275,20 @@ def test_neighbourhood_editor_recomposes_a_house_and_resets_to_the_csv(client, a
     assert client.post("/api/admin/neighbourhood/reset", headers=admin).status_code == 200
     assert client.get("/api/admin/neighbourhood", headers=admin).json()["houses"] == view["houses"]
     client.delete(f"/api/houses/1/devices/{manual['id']}", headers=admin)
+
+
+def test_old_catalog_devices_are_recomposed_and_their_logs_emptied(client, admin):
+    async def downgrade_then_upgrade() -> tuple[int, int]:
+        async with get_session_context() as session:
+            houses = await HouseRepository(session).get_all_with_relations()
+            old = next(d for d in houses[1].devices if d.mode)
+            old.mode = "continuu"
+            session.add(EnergyLogModel(device_id=old.id, timestamp=datetime(2025, 6, 1), energy_kwh=0.1,
+                                       event_type="step"))
+            await session.flush()
+            upgraded = await upgrade_old_devices(session, houses)
+            return upgraded, (await session.execute(text("SELECT count(*) FROM energy_logs"))).scalar_one()
+
+    assert client.portal.call(downgrade_then_upgrade) == (1, 0)
+    devices = client.get("/api/houses/2", headers=admin).json()["devices"]
+    assert all(d["schedule"]["mode"] in lm.TIPURI for d in devices if d["schedule"])
