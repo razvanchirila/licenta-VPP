@@ -349,13 +349,27 @@ def realise(plan: Dispatch, community: CommunityParams, pv: np.ndarray, load: np
     dis = dis - np.clip(over - curtail, 0, None)
     ch = ch - np.clip(ch - dis - (pv - curtail) - inverter, 0, None)
 
-    net = load - (pv - curtail) + ch - dis
-    deficit, surplus = np.clip(net, 0, None), np.clip(-net, 0, None)
-    offered, wanted = surplus * p2p_allowed, deficit * p2p_allowed
-    traded = min(offered.sum(), wanted.sum(), grid.internal_line_kw)
-    p2p_out = offered * (traded / offered.sum()) if traded > 0 else np.zeros_like(net)
-    p2p_in = wanted * (traded / wanted.sum()) if traded > 0 else np.zeros_like(net)
-    imp, exp = deficit - p2p_in, surplus - p2p_out
+    def exchange(ch, dis, curtail):
+        net = load - (pv - curtail) + ch - dis
+        deficit, surplus = np.clip(net, 0, None), np.clip(-net, 0, None)
+        offered, wanted = surplus * p2p_allowed, deficit * p2p_allowed
+        traded = min(offered.sum(), wanted.sum(), grid.internal_line_kw)
+        p2p_out = offered * (traded / offered.sum()) if traded > 0 else np.zeros_like(net)
+        p2p_in = wanted * (traded / wanted.sum()) if traded > 0 else np.zeros_like(net)
+        return deficit - p2p_in, surplus - p2p_out, p2p_in, p2p_out
+
+    imp, exp, p2p_in, p2p_out = exchange(ch, dis, curtail)
+    # over the community import limit every battery helps (less charge, then more discharge shared over P2P)
+    # before any house sheds
+    excess = imp.sum() - grid.import_max_kw
+    if excess > 0:
+        if ch.sum() > 0:
+            ch = ch * (1 - min(1.0, excess / ch.sum()))
+        excess = exchange(ch, dis, curtail)[0].sum() - grid.import_max_kw
+        room = np.clip(np.minimum(max_dis - dis, inverter - ((pv - curtail) + dis - ch)), 0, None) * (ch <= 0)
+        if excess > 0 and room.sum() > 0:
+            dis = dis + room * min(1.0, excess / room.sum())
+        imp, exp, p2p_in, p2p_out = exchange(ch, dis, curtail)
 
     if price_export < 0:
         cut = exp.copy()
@@ -366,15 +380,10 @@ def realise(plan: Dispatch, community: CommunityParams, pv: np.ndarray, load: np
     from_pv = np.minimum(cut, pv - curtail)
     curtail, dis, exp = curtail + from_pv, dis - (cut - from_pv), exp - cut
 
-    shed = np.zeros_like(net)
+    shed = np.zeros_like(imp)
     if imp.sum() > grid.import_max_kw:
-        cut = imp * (1 - grid.import_max_kw / imp.sum())
-        less_charge = np.minimum(cut, ch)
-        ch = ch - less_charge
-        room = np.clip(np.minimum(max_dis - dis, inverter - ((pv - curtail) + dis - ch)), 0, None)
-        more_discharge = np.minimum(cut - less_charge, room)
-        dis, imp = dis + more_discharge, imp - cut
-        shed = cut - less_charge - more_discharge
+        shed = imp * (1 - grid.import_max_kw / imp.sum())
+        imp = imp - shed
     return Dispatch(curtail=curtail, shed=shed, ch=ch, dis=dis, imp=imp, exp=exp, p2p_in=p2p_in, p2p_out=p2p_out)
 
 
