@@ -3,8 +3,9 @@ name: CI
 # feature/* -> PR -> develop (deploy pe staging) -> PR -> main (deploy in productie).
 # Job-urile rapide ruleaza doar cand s-a schimbat zona lor; build-ul Docker doar pe drumul spre productie.
 on:
+  # ramurile feature/* sunt verificate prin pull request; un push pe ele ar rula aceleasi teste a doua oara
   push:
-    branches: ["**"]
+    branches: [main, develop]
   pull_request:
   schedule:
     - cron: "0 4 * * 1"
@@ -29,6 +30,9 @@ jobs:
       backend: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.backend == 'true' }}
       mobile: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.mobile == 'true' }}
       admin: ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.admin == 'true' }}
+      web: >-
+        ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.mobile == 'true'
+        || steps.filter.outputs.admin == 'true' || steps.filter.outputs.stack == 'true' }}
       code: >-
         ${{ steps.all.outputs.run == 'true' || steps.filter.outputs.backend == 'true'
         || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.admin == 'true'
@@ -143,15 +147,15 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # imaginile Docker: PR spre main, push pe main sau develop, saptamanal si la cerere; ruleaza si cand
-  # job-urile rapide au fost sarite (zona lor nu s-a schimbat), dar nu dupa un esec
+  # verifica doar ca imaginile se construiesc: PR spre main, saptamanal si la cerere. La push pe main sau
+  # develop nu ruleaza, acolo le construieste publish. Ruleaza si cand job-urile rapide au fost sarite
+  # (zona lor nu s-a schimbat), dar nu dupa un esec
   docker:
     needs: [changes, backend, flutter, admin]
     if: >-
       ${{ !failure() && !cancelled() && needs.changes.outputs.code == 'true' && (
         github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'))) }}
+        || (github.event_name == 'pull_request' && github.base_ref == 'main')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -166,10 +170,13 @@ jobs:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
         run: docker compose -p vpp-ci -f docker-compose.yml -f .github/docker-compose.ci.yml build
 
+  # in paralel cu testele, doar cu eticheta commit-ului; eticheta canalului o muta deploy-ul dupa ce merge.
+  # O imagine se construieste doar daca s-a schimbat zona ei, altfel se eticheteaza cea din canal, adica
+  # ultima care a mers (cateva secunde in loc de ~4 minute pentru web)
   publish:
-    needs: docker
+    needs: changes
     if: >-
-      ${{ !failure() && !cancelled() && needs.docker.result == 'success' && github.event_name == 'push'
+      ${{ needs.changes.outputs.code == 'true' && github.event_name == 'push'
       && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -190,18 +197,22 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push api
+        if: needs.changes.outputs.backend == 'true'
         uses: docker/build-push-action@v6
         with:
           context: backend
           push: true
-          tags: |
-            ${{ env.IMAGE }}-api:${{ env.CHANNEL }}
-            ${{ env.IMAGE }}-api:${{ github.sha }}
+          tags: ${{ env.IMAGE }}-api:${{ github.sha }}
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max,ignore-error=true
 
+      - name: Tag api
+        if: needs.changes.outputs.backend != 'true'
+        run: docker buildx imagetools create -t "$IMAGE-api:$GITHUB_SHA" "$IMAGE-api:$CHANNEL"
+
       - name: Push web
+        if: needs.changes.outputs.web == 'true'
         uses: docker/build-push-action@v6
         with:
           context: web
@@ -210,15 +221,17 @@ jobs:
             admin=admin
           build-args: WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
           push: true
-          tags: |
-            ${{ env.IMAGE }}-web:${{ env.CHANNEL }}
-            ${{ env.IMAGE }}-web:${{ github.sha }}
+          tags: ${{ env.IMAGE }}-web:${{ github.sha }}
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max,ignore-error=true
 
+      - name: Tag web
+        if: needs.changes.outputs.web != 'true'
+        run: docker buildx imagetools create -t "$IMAGE-web:$GITHUB_SHA" "$IMAGE-web:$CHANNEL"
+
   deploy:
-    needs: publish
+    needs: [publish, backend, flutter, admin]
     if: ${{ !failure() && !cancelled() && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -230,8 +243,10 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
-      packages: read
+      packages: write
     env:
+      IMAGE: ghcr.io/razvanchirila/licenta-vpp
+      CHANNEL: ${{ github.ref == 'refs/heads/main' && 'latest' || 'develop' }}
       TARGET: ${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
       SITE_URL: ${{ github.ref == 'refs/heads/main' && 'https://vpp-licenta.switzerlandnorth.cloudapp.azure.com' || 'https://staging.51.107.88.91.nip.io' }}
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -276,6 +291,18 @@ jobs:
           done
           echo "health: $health, /api/auth/me: $api"
           exit 1
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move channel tag
+        run: |
+          for name in api web; do
+            docker buildx imagetools create -t "$IMAGE-$name:$CHANNEL" "$IMAGE-$name:$GITHUB_SHA"
+          done
 
       - name: Rollback
         if: failure() && steps.check.outputs.enabled == 'true'
