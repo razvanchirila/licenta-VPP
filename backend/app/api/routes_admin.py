@@ -113,12 +113,14 @@ async def manual_trade(body: ManualTradeRequest, _: UserModel = Depends(require_
 
 @router.websocket("/ws")
 async def live_updates(websocket: WebSocket, user: UserModel | None = Depends(get_ws_user)):
-    """One {"type": "connected", ...} message, then one "step" message per simulation step."""
+    """One {"type": "connected", ...} message, then one "step" message per simulation step. Admins only:
+    a step carries the load, PV, SOC and trades of every house."""
     await websocket.accept()
-    if user is None:
+    if user is None or not user.is_admin:
         # closing before accept makes the server answer the handshake with HTTP 403, which a browser
         # only reports as code 1006; after accept the client sees 1008 and knows the token is the problem
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Token invalid sau lipsa")
+        reason = "Token invalid sau lipsa" if user is None else "Doar administratorul poate face asta"
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
         return
     sim.add_ws(websocket)
     try:

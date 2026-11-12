@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import UserModel
@@ -16,8 +17,14 @@ async def create_user(
     if await repo.get_by_username(username) is not None:
         return None
     user = UserModel(username=username, password_hash=hash_password(password), house_id=house_id, is_admin=is_admin)
-    session.add(user)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(user)
+    except IntegrityError:
+        # a request running at the same time took the name or the house after the checks had passed
+        if house_id is not None:
+            await ensure_house_assignable(session, house_id)
+        return None
     return user
 
 
@@ -40,5 +47,8 @@ async def update_user(session: AsyncSession, user: UserModel, password: str | No
             user.house_id = house_id
     if is_admin is not None:
         user.is_admin = is_admin
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        raise HTTPException(400, f"Casa {house_id} e deja asignata altui utilizator") from None
     return user
