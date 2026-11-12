@@ -1,6 +1,35 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
+
+// The limits of `Username` and `Password` in the backend schemas; checked here so a new account
+// gets the message next to the field instead of a rejected request.
+const int usernameMinLength = 3;
+const int usernameMaxLength = 50;
+const int passwordMinLength = 6;
+const int passwordMaxBytes = 72;
+final RegExp _usernamePattern = RegExp(r'^[A-Za-z0-9_.-]+$');
+
+String? validateUsername(String? value, {required bool register}) {
+  final name = value?.trim() ?? '';
+  if (name.isEmpty) return 'Introdu numele de utilizator';
+  if (!register) return null;
+  if (name.length < usernameMinLength) return 'Minim $usernameMinLength caractere';
+  if (name.length > usernameMaxLength) return 'Maxim $usernameMaxLength de caractere';
+  if (!_usernamePattern.hasMatch(name)) return 'Doar litere fără diacritice, cifre și semnele . _ -';
+  return null;
+}
+
+String? validatePassword(String? value, {required bool register}) {
+  if (value == null || value.isEmpty) return 'Introdu parola';
+  if (!register) return null;
+  if (value.length < passwordMinLength) return 'Parola trebuie să aibă cel puțin $passwordMinLength caractere';
+  // bcrypt reads 72 bytes and a letter with diacritics takes two
+  final tooLong = utf8.encode(value).length > passwordMaxBytes;
+  return tooLong ? 'Parola este prea lungă (cel mult $passwordMaxBytes de octeți)' : null;
+}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -40,9 +69,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       // Login updates authState, which swaps this screen for the home screen.
       await userApiService.login(username, password);
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _errorMessage = e.message);
+      setState(() => _errorMessage = ApiException.from(e).message);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -109,20 +138,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             autofillHints: const [AutofillHints.username],
                             decoration: InputDecoration(
                               labelText: 'Utilizator',
+                              errorMaxLines: 2,
                               prefixIcon: const Icon(Icons.person_outline),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Introdu numele de utilizator';
-                              }
-                              if (_isRegisterMode && value.trim().length < 3) {
-                                return 'Minim 3 caractere';
-                              }
-                              return null;
-                            },
+                            validator: (value) => validateUsername(value, register: _isRegisterMode),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -136,20 +158,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             onFieldSubmitted: (_) => _isLoading ? null : _submit(),
                             decoration: InputDecoration(
                               labelText: 'Parolă',
+                              errorMaxLines: 2,
                               prefixIcon: const Icon(Icons.lock_outline),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Introdu parola';
-                              }
-                              if (_isRegisterMode && value.length < 6) {
-                                return 'Parola trebuie să aibă cel puțin 6 caractere';
-                              }
-                              return null;
-                            },
+                            validator: (value) => validatePassword(value, register: _isRegisterMode),
                           ),
                         ),
                         if (_errorMessage != null) ...[

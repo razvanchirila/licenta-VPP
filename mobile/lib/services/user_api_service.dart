@@ -17,7 +17,7 @@ class UserApiService {
   int _requireHouse() {
     final id = auth.houseId;
     if (id == null) {
-      throw const ApiException(403, 'Contul nu are o casa asignata');
+      throw const ApiException(403, 'Contul nu are o casă asignată');
     }
     return id;
   }
@@ -30,7 +30,7 @@ class UserApiService {
     ));
     final token = data['access_token']?.toString();
     if (token == null || token.isEmpty) {
-      throw const ApiException(500, 'Raspuns de autentificare invalid');
+      throw const ApiException(500, 'Răspuns de autentificare invalid');
     }
     await auth.setSession(
       token: token,
@@ -49,6 +49,12 @@ class UserApiService {
   }
 
   Future<void> logout() => auth.clear();
+
+  /// The backend reads house and role on every request, so the copy saved at login can go stale.
+  Future<void> refreshSession() async {
+    final data = asMap(await client.get('/auth/me'));
+    await auth.updateUser(houseId: asIntOrNull(data['house_id']), isAdmin: asBool(data['is_admin']));
+  }
 
   Future<House> getMyHouse() async => House.fromJson(asMap(await client.get('/me/house')));
 
@@ -89,8 +95,6 @@ class UserApiService {
       })));
 
   Future<void> deleteDevice(int deviceId) => client.delete('/me/devices/$deviceId');
-
-  Future<EnergyTotals> getEnergyToday() async => EnergyTotals.fromJson(asMap(await client.get('/me/energy/today')));
 
   Future<EnergyChart> getEnergyChart(String period, {String? date}) async =>
       EnergyChart.fromJson(asMap(await client.get('/me/energy/chart', query: {'period': period, 'date': date})));
@@ -151,6 +155,8 @@ class UserApiService {
       asMap(await client.post('/wallet/${_requireHouse()}/transfer-to-vpp', body: {'energy_kwh': energyKwh})));
 
   Future<SimPrices> getSimPrices() async => SimPrices.fromJson(asMap(await client.get('/sim/prices')));
+
+  Future<SimConfig> getSimConfig() async => SimConfig.fromJson(asMap(await client.get('/config')));
 }
 
 final AuthState authState = AuthState();

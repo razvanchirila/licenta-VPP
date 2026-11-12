@@ -18,14 +18,19 @@ String defaultApiBaseUrl() {
 }
 
 class ApiException implements Exception {
-  /// HTTP status code, or 0 for network / timeout errors.
+  /// HTTP status code, 0 for network / timeout errors, [unexpected] for a failure inside the app.
   final int statusCode;
   final String message;
 
   const ApiException(this.statusCode, this.message);
 
+  static const int unexpected = -1;
+
+  /// Anything thrown while loading (a cast, a parsing bug) still has to reach the screen as an error.
+  factory ApiException.from(Object error) =>
+      error is ApiException ? error : const ApiException(unexpected, 'A apărut o eroare neașteptată');
+
   bool get isNetworkError => statusCode == 0;
-  bool get isUnauthorized => statusCode == 401;
 
   @override
   String toString() => 'ApiException($statusCode): $message';
@@ -77,6 +82,21 @@ class AuthState extends ChangeNotifier {
     await prefs.setString(_usernameKey, username);
     await prefs.setBool(_isAdminKey, isAdmin);
     notifyListeners();
+  }
+
+  /// House and role as the server sees them now; the token stays the same.
+  Future<void> updateUser({required int? houseId, required bool isAdmin}) async {
+    if (_token == null || (houseId == _houseId && isAdmin == _isAdmin)) return;
+    _houseId = houseId;
+    _isAdmin = isAdmin;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    if (houseId != null) {
+      await prefs.setInt(_houseIdKey, houseId);
+    } else {
+      await prefs.remove(_houseIdKey);
+    }
+    await prefs.setBool(_isAdminKey, isAdmin);
   }
 
   Future<void> clear() async {
@@ -152,14 +172,14 @@ class ApiClient {
     try {
       response = await request().timeout(timeout);
     } on TimeoutException {
-      throw const ApiException(0, 'Serverul nu a raspuns la timp');
+      throw const ApiException(0, 'Serverul nu a răspuns la timp');
     } catch (e) {
       throw const ApiException(0, 'Nu se poate contacta serverul');
     }
 
     if (response.statusCode == 401 && authenticated) {
       await auth.clear();
-      throw const ApiException(401, 'Sesiune expirata, autentifica-te din nou');
+      throw const ApiException(401, 'Sesiune expirată, autentifică-te din nou');
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(response.statusCode, _errorMessage(response));
@@ -168,22 +188,68 @@ class ApiClient {
     try {
       return json.decode(utf8.decode(response.bodyBytes));
     } catch (_) {
-      throw ApiException(response.statusCode, 'Raspuns invalid de la server');
+      throw ApiException(response.statusCode, 'Răspuns invalid de la server');
     }
   }
 
-  /// Extracts FastAPI's `{"detail": ...}` (string or validation list).
+  /// Extracts FastAPI's `{"detail": ...}`: a string, or the list of validation errors of a 422.
   static String _errorMessage(http.Response response) {
     try {
       final decoded = json.decode(utf8.decode(response.bodyBytes));
       final detail = decoded is Map ? decoded['detail'] : null;
       if (detail is String) return detail;
       if (detail is List && detail.isNotEmpty) {
-        return detail.map((e) => e is Map ? (e['msg'] ?? e.toString()) : e.toString()).join('; ');
+        return detail.map((e) => e is Map ? _validationMessage(e) : e.toString()).join('; ');
       }
     } catch (_) {}
     return 'Eroare HTTP ${response.statusCode}';
   }
+}
 
-  void close() => _client.close();
+const Map<String, String> _fieldLabels = {
+  'username': 'Numele de utilizator',
+  'password': 'Parola',
+  'name': 'Numele',
+  'power_w': 'Puterea',
+  'mode': 'Modul',
+  'backup_reserve_percent': 'Rezerva',
+  'fixed_price_lei_kwh': 'Prețul fix',
+  'discount_percent': 'Reducerea',
+  'min_sell_price_lei_kwh': 'Prețul minim',
+  'energy_kwh': 'Energia',
+};
+
+/// One entry of a pydantic error list (`type`, `loc`, `msg`, `ctx`) as a Romanian sentence.
+String _validationMessage(Map<dynamic, dynamic> error) {
+  final loc = error['loc'];
+  final field = loc is List && loc.isNotEmpty ? loc.last.toString() : '';
+  final label = _fieldLabels[field] ?? (field.isEmpty ? 'Valoarea' : 'Câmpul $field');
+  final ctx = error['ctx'] is Map ? error['ctx'] as Map : const {};
+  String limit(String key) {
+    final v = ctx[key];
+    return v is num && v == v.roundToDouble() ? v.round().toString() : '$v';
+  }
+
+  switch (error['type']) {
+    case 'missing':
+      return '$label lipsește';
+    case 'string_too_short':
+      return '$label trebuie să aibă cel puțin ${limit('min_length')} caractere';
+    case 'string_too_long':
+      return '$label poate avea cel mult ${limit('max_length')} caractere';
+    case 'string_pattern_mismatch':
+      return '$label conține caractere nepermise';
+    case 'greater_than':
+      return '$label trebuie să fie peste ${limit('gt')}';
+    case 'greater_than_equal':
+      return '$label trebuie să fie cel puțin ${limit('ge')}';
+    case 'less_than':
+      return '$label trebuie să fie sub ${limit('lt')}';
+    case 'less_than_equal':
+      return '$label poate fi cel mult ${limit('le')}';
+    case 'value_error':
+      // the validators in schemas.py raise ValueError with their own text
+      return '$label: ${(error['msg'] ?? '').toString().replaceFirst('Value error, ', '')}';
+  }
+  return '$label are o valoare nevalidă';
 }

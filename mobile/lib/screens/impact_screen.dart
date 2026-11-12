@@ -40,6 +40,7 @@ class _ImpactScreenState extends State<ImpactScreen> with AsyncLoader<EnergyImpa
               actions: [
                 IconButton(
                   onPressed: _loadImpact,
+                  tooltip: 'Reîncarcă',
                   icon: Icon(Icons.refresh_rounded, color: Colors.white.withValues(alpha: 0.8)),
                 ),
               ],

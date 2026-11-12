@@ -1,3 +1,4 @@
+import 'package:flutter_interface/models/sim_prices.dart';
 import 'package:flutter_interface/models/trading.dart';
 
 class TradingData {
@@ -7,12 +8,16 @@ class TradingData {
   final List<Trade> history;
   final List<WalletTx> walletTransactions;
 
+  /// Null when `/api/config` could not be read; the screen works without it.
+  final SimConfig? config;
+
   const TradingData({
     required this.prefs,
     required this.wallet,
     required this.stats,
     required this.history,
     required this.walletTransactions,
+    this.config,
   });
 }
 

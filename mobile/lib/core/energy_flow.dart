@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_interface/models/house.dart';
 
-/// Power thresholds (kW) below which a flow is treated as idle. Shared by
+/// Power thresholds (kW) below which a flow is treated as idle.
 class FlowThresholds {
   FlowThresholds._();
 

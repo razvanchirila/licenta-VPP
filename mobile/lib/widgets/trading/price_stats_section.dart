@@ -61,7 +61,7 @@ class PriceStatsSection extends StatelessWidget {
               const Expanded(
                 child: StatCard(
                   label: 'Sursă date',
-                  value: 'Scenariu simulat (PZU-like)',
+                  value: 'Scenariu simulat (tip PZU)',
                   icon: Icons.memory_rounded,
                   iconColor: AppColors.teal,
                 ),

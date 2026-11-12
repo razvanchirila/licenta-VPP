@@ -3,24 +3,18 @@ import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/core/constants.dart';
 
 class Header extends StatelessWidget {
-  final String address;
   final String status;
   final bool isDischarging;
   final int notificationCount;
   final VoidCallback? onProfileTap;
-  final Widget? customWidget;
-  final bool showCustomWidget;
   final String userName;
 
   const Header({
     super.key,
-    this.address = '',
     this.status = '',
     this.isDischarging = false,
     this.notificationCount = 0,
     this.onProfileTap,
-    this.customWidget,
-    this.showCustomWidget = false,
     this.userName = '',
   });
 
@@ -74,10 +68,6 @@ class Header extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (showCustomWidget && customWidget != null) ...[
-                  const SizedBox(height: AppConstants.spacingS),
-                  customWidget!,
-                ],
               ],
             ),
           ),

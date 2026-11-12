@@ -7,21 +7,6 @@ enum ClimateMode {
   heat,
 }
 
-extension ClimateModeExtension on ClimateMode {
-  String get displayName {
-    switch (this) {
-      case ClimateMode.cold:
-        return 'COLD';
-      case ClimateMode.fan:
-        return 'FAN';
-      case ClimateMode.dry:
-        return 'DRY';
-      case ClimateMode.heat:
-        return 'HEAT';
-    }
-  }
-}
-
 enum ClimateRoom {
   livingRoom,
   bedroom,
@@ -34,7 +19,7 @@ extension ClimateRoomExtension on ClimateRoom {
   String get displayName {
     switch (this) {
       case ClimateRoom.livingRoom:
-        return 'Living Room';
+        return 'Sufragerie';
       case ClimateRoom.bedroom:
         return 'Dormitor';
       case ClimateRoom.kitchen:

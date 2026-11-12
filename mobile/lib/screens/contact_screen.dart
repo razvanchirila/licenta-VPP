@@ -7,12 +7,19 @@ import 'package:flutter_interface/widgets/common/screen_header.dart';
 class ContactScreen extends StatelessWidget {
   const ContactScreen({super.key});
 
-  void _copyToClipboard(BuildContext context, String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
+  /// The browser can refuse clipboard access (no permission, page not focused).
+  Future<void> _copyToClipboard(BuildContext context, String text) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var copied = true;
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+    } catch (_) {
+      copied = false;
+    }
+    messenger.showSnackBar(
       SnackBar(
-        content: Text('$label copiat în clipboard'),
-        backgroundColor: AppColors.green,
+        content: Text(copied ? 'Copiat în clipboard: $text' : 'Textul nu a putut fi copiat în clipboard'),
+        backgroundColor: copied ? AppColors.green : AppColors.red,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -58,10 +65,10 @@ class ContactScreen extends StatelessWidget {
                   _buildContactOption(
                     context: context,
                     icon: Icons.email_rounded,
-                    title: 'Email',
+                    title: 'E-mail',
                     subtitle: 'support@vpp-simulator.ro',
                     color: AppColors.blue,
-                    onTap: () => _copyToClipboard(context, 'support@vpp-simulator.ro', 'Email'),
+                    onTap: () => _copyToClipboard(context, 'support@vpp-simulator.ro'),
                   ),
                   const SizedBox(height: 12),
                   _buildContactOption(
@@ -70,7 +77,7 @@ class ContactScreen extends StatelessWidget {
                     title: 'Telefon',
                     subtitle: '+40 721 234 567',
                     color: AppColors.green,
-                    onTap: () => _copyToClipboard(context, '+40721234567', 'Telefon'),
+                    onTap: () => _copyToClipboard(context, '+40721234567'),
                   ),
                   const SizedBox(height: 12),
                   _buildContactOption(
@@ -79,7 +86,7 @@ class ContactScreen extends StatelessWidget {
                     title: 'Adresă',
                     subtitle: 'Str. Energiei Nr. 10, București',
                     color: AppColors.amber,
-                    onTap: () => _copyToClipboard(context, 'Str. Energiei Nr. 10, București', 'Adresa'),
+                    onTap: () => _copyToClipboard(context, 'Str. Energiei Nr. 10, București'),
                   ),
                   const SizedBox(height: 32),
                   Text(
@@ -103,19 +110,20 @@ class ContactScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   _buildFaqItem(
-                    question: 'Cum pot monitoriza consumul de energie?',
-                    answer:
-                        'Accesează secțiunea Energy din meniul principal pentru a vedea consumul în timp real și istoricul.',
+                    question: 'Unde văd consumul și producția casei?',
+                    answer: 'Ecranul principal arată puterile din ultimul pas al simulării. Graficele pe zi, '
+                        'săptămână și lună sunt în meniu, la Energie, iar consumul pe dispozitive la Statistici.',
                   ),
                   _buildFaqItem(
-                    question: 'Ce înseamnă P2P Trading?',
-                    answer:
-                        'P2P Trading îți permite să vinzi sau să cumperi energie direct de la alți prosumatori din comunitate.',
+                    question: 'Ce înseamnă Trading P2P?',
+                    answer: 'Surplusul unei case este vândut vecinilor din comunitate la un preț mai mic decât cel '
+                        'din rețea. În meniu, la Trading P2P, găsești prețul curent, portofelul, istoricul '
+                        'tranzacțiilor și opțiunile de vânzare și cumpărare.',
                   ),
                   _buildFaqItem(
-                    question: 'Cum funcționează bateria Powerwall?',
-                    answer:
-                        'Bateria stochează energia solară în exces și o folosește când producția solară este scăzută sau în caz de pană de curent.',
+                    question: 'Cum este folosită bateria casei?',
+                    answer: 'Bateria se încarcă din surplusul solar și se descarcă atunci când consumul depășește '
+                        'producția. Rezerva de backup, sub care bateria nu se descarcă, se alege din meniu, la Setări.',
                   ),
                   const SizedBox(height: 40),
                 ],
@@ -185,61 +193,79 @@ class ContactScreen extends StatelessWidget {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
+    final radius = BorderRadius.circular(16);
+    return Semantics(
+      container: true,
+      button: true,
+      label: '$title: $subtitle',
+      hint: 'Copiază',
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withValues(alpha: 0.3),
-            width: 1,
+      excludeSemantics: true,
+      child: Material(
+        color: color.withValues(alpha: 0.1),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: color.withValues(alpha: 0.3), width: 1),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _contactRow(icon: icon, title: title, subtitle: subtitle, color: color),
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.copy_rounded,
-              color: Colors.white.withValues(alpha: 0.4),
-              size: 20,
-            ),
-          ],
-        ),
       ),
+    );
+  }
+
+  Widget _contactRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 24),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Icon(
+          Icons.copy_rounded,
+          color: Colors.white.withValues(alpha: 0.4),
+          size: 20,
+        ),
+      ],
     );
   }
 

@@ -19,3 +19,10 @@ bool isStandalone() {
   final result = _call('vppStandalone');
   return result != null && result.isA<JSBoolean>() && (result as JSBoolean).toDart;
 }
+
+/// window.open returns null when the browser blocks the new tab.
+bool openPage(String url) {
+  final open = globalContext.getProperty<JSAny?>('open'.toJS);
+  if (open == null || !open.isA<JSFunction>()) return false;
+  return (open as JSFunction).callAsFunction(globalContext, url.toJS, '_blank'.toJS) != null;
+}

@@ -49,9 +49,10 @@ mixin AsyncLoader<T, W extends StatefulWidget> on State<W> {
       if (!mounted || id != _requestId) return null;
       setState(() => state = AsyncValue.data(data));
       return data;
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted || id != _requestId) return null;
-      setState(() => state = AsyncValue.error(e.message, previous: keepPrevious ? state.data : null));
+      final message = ApiException.from(e).message;
+      setState(() => state = AsyncValue.error(message, previous: keepPrevious ? state.data : null));
       return null;
     }
   }

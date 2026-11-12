@@ -2,63 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter_interface/models/json_utils.dart';
 
-/// Energy balance of a period (`EnergyTotals`), kWh and lei.
-class EnergyTotals {
-  final int steps;
-  final double consumedKwh;
-  final double producedKwh;
-  final double fromGridKwh;
-  final double toGridKwh;
-  final double fromBatteryKwh;
-  final double toBatteryKwh;
-  final double fromNeighboursKwh;
-  final double toNeighboursKwh;
-  final double fromSolarKwh;
-  final double costLei;
-  final double referenceCostLei;
-  final double savingsLei;
-  final String? date;
-  final String? simTime;
-
-  const EnergyTotals({
-    required this.steps,
-    required this.consumedKwh,
-    required this.producedKwh,
-    required this.fromGridKwh,
-    required this.toGridKwh,
-    required this.fromBatteryKwh,
-    required this.toBatteryKwh,
-    required this.fromNeighboursKwh,
-    required this.toNeighboursKwh,
-    required this.fromSolarKwh,
-    required this.costLei,
-    required this.referenceCostLei,
-    required this.savingsLei,
-    this.date,
-    this.simTime,
-  });
-
-  bool get hasData => steps > 0;
-
-  factory EnergyTotals.fromJson(Map<String, dynamic> j) => EnergyTotals(
-        steps: asInt(j['steps']),
-        consumedKwh: asDouble(j['consumed_kwh']),
-        producedKwh: asDouble(j['produced_kwh']),
-        fromGridKwh: asDouble(j['from_grid_kwh']),
-        toGridKwh: asDouble(j['to_grid_kwh']),
-        fromBatteryKwh: asDouble(j['from_battery_kwh']),
-        toBatteryKwh: asDouble(j['to_battery_kwh']),
-        fromNeighboursKwh: asDouble(j['from_neighbours_kwh']),
-        toNeighboursKwh: asDouble(j['to_neighbours_kwh']),
-        fromSolarKwh: asDouble(j['from_solar_kwh']),
-        costLei: asDouble(j['cost_lei']),
-        referenceCostLei: asDouble(j['reference_cost_lei']),
-        savingsLei: asDouble(j['savings_lei']),
-        date: j['date']?.toString(),
-        simTime: j['sim_time']?.toString(),
-      );
-}
-
 /// One point of `/api/me/energy/chart` (kW averaged over the interval).
 class EnergyPoint {
   final DateTime time;
