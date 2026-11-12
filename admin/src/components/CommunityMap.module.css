@@ -4,9 +4,15 @@
   gap: 12px;
 }
 
+.scroll {
+  overflow-x: auto;
+}
+
+/* below this width the labels get too small to read, so on a phone the map scrolls sideways */
 .svg {
   display: block;
   width: 100%;
+  min-width: 880px;
   height: auto;
 }
 

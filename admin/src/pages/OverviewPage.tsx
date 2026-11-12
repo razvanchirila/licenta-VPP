@@ -1,30 +1,29 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from '../api/endpoints'
 import { Card } from '../components/Card'
 import { CommunityMap } from '../components/CommunityMap'
 import { KpiCard } from '../components/KpiCard'
 import { PowerChart } from '../components/PowerChart'
 import { PriceChart } from '../components/PriceChart'
+import { Spinner } from '../components/Spinner'
 import { TradesTable } from '../components/TradesTable'
 import { useLive } from '../hooks/useLive'
-import { dataSourceText, formatDate, formatNumber, formatPercent, hourOf, timeOf } from '../lib/format'
+import { dataSourceText, formatDate, formatNumber, formatPercent, hourOf, minutesText, timeOf } from '../lib/format'
 import type { VppToday } from '../types/api'
 import styles from './OverviewPage.module.css'
 
-function TodaySummary({ today }: { today?: VppToday }) {
-  const rows: [string, string][] = today
-    ? [
-        ['Energie PV', `${formatNumber(today.pv_kwh, 1)} kWh`],
-        ['Consum', `${formatNumber(today.load_kwh, 1)} kWh`],
-        ['Import / export', `${formatNumber(today.import_kwh, 1)} / ${formatNumber(today.export_kwh, 1)} kWh`],
-        ['Volum P2P', `${formatNumber(today.p2p_kwh, 2)} kWh`],
-        ['Cost net rețea', `${formatNumber(today.cost_lei, 2)} lei`],
-        ['Vârf import', `${formatNumber(today.peak_import_kw, 1)} kW`],
-        ['Autoconsum', formatPercent(today.self_consumption)],
-        ['Autonomie', formatPercent(today.self_sufficiency)],
-        ['Tranzacții decontate', `${today.trades_settled} (${formatNumber(today.trades_value_lei, 2)} lei)`],
-      ]
-    : []
+function TodaySummary({ today }: { today: VppToday }) {
+  const rows: [string, string][] = [
+    ['Energie PV', `${formatNumber(today.pv_kwh, 1)} kWh`],
+    ['Consum', `${formatNumber(today.load_kwh, 1)} kWh`],
+    ['Import / export', `${formatNumber(today.import_kwh, 1)} / ${formatNumber(today.export_kwh, 1)} kWh`],
+    ['Volum P2P', `${formatNumber(today.p2p_kwh, 2)} kWh`],
+    ['Cost net rețea', `${formatNumber(today.cost_lei, 2)} lei`],
+    ['Vârf import', `${formatNumber(today.peak_import_kw, 1)} kW`],
+    ['Autoconsum', formatPercent(today.self_consumption)],
+    ['Autonomie', formatPercent(today.self_sufficiency)],
+    ['Tranzacții decontate', `${today.trades_settled} (${formatNumber(today.trades_value_lei, 2)} lei)`],
+  ]
   return (
     <dl className={styles.summary}>
       {rows.map(([label, value]) => (
@@ -43,11 +42,14 @@ export function OverviewPage() {
     queryKey: ['prices', status?.sim_date],
     queryFn: api.prices,
     enabled: Boolean(status?.sim_date),
+    // at midnight the old day stays on screen until the new prices arrive
+    placeholderData: keepPreviousData,
   })
   const stats = useQuery({ queryKey: ['vpp-stats'], queryFn: api.vppStats, refetchInterval: 10_000 })
 
   const c = last?.community
   const price = last?.price
+  const priceStep = prices.data?.dt_hours ?? status?.dt_hours
 
   return (
     <div className={styles.page}>
@@ -75,7 +77,13 @@ export function OverviewPage() {
         </Card>
 
         <Card title="Ziua simulată" subtitle="Totaluri de la 00:00">
-          <TodaySummary today={stats.data?.today} />
+          {stats.data ? (
+            <TodaySummary today={stats.data.today} />
+          ) : stats.isError ? (
+            <p className="muted">Totalurile zilei nu au putut fi încărcate: {stats.error.message}</p>
+          ) : (
+            <Spinner label="Se încarcă totalurile…" />
+          )}
         </Card>
 
         <Card
@@ -86,11 +94,17 @@ export function OverviewPage() {
           <CommunityMap step={last} />
         </Card>
 
-        <Card className={styles.half} title="Prețuri azi" subtitle="lei/kWh, pe intervale de 15 minute">
-          {prices.isError ? (
-            <p className="muted">Prețurile nu au putut fi încărcate.</p>
-          ) : (
+        <Card
+          className={styles.half}
+          title="Prețuri azi"
+          subtitle={priceStep ? `lei/kWh, pe intervale de ${minutesText(priceStep)}` : 'lei/kWh'}
+        >
+          {prices.data ? (
             <PriceChart prices={prices.data} nowHour={last ? hourOf(last.sim_datetime) : null} height={400} />
+          ) : prices.isError ? (
+            <p className="muted">Prețurile nu au putut fi încărcate: {prices.error.message}</p>
+          ) : (
+            <Spinner label="Se încarcă prețurile…" />
           )}
         </Card>
 

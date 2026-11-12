@@ -10,10 +10,13 @@ import type {
   Me,
   MessageResponse,
   Neighbourhood,
+  NewUser,
   SimConfig,
   SimStatus,
   StepResult,
   Trade,
+  User,
+  UserUpdate,
   VppStats,
   Wallet,
 } from '../types/api'
@@ -26,7 +29,7 @@ export const api = {
   me: () => request<Me>('/api/auth/me'),
 
   status: () => request<SimStatus>('/api/sim/status'),
-  history: (limit = 96) => request<{ count: number; steps: StepResult[] }>(`/api/sim/history?limit=${limit}`),
+  history: (limit: number) => request<{ count: number; steps: StepResult[] }>(`/api/sim/history?limit=${limit}`),
   prices: () => request<DayPrices>('/api/sim/prices'),
   simAction: (action: 'start' | 'stop' | 'pause' | 'resume' | 'reset') =>
     request<StatusResponse>(`/api/sim/${action}`, { method: 'POST' }),
@@ -50,6 +53,13 @@ export const api = {
     request<HouseSpec>(`/api/admin/neighbourhood/${id}`, { method: 'PUT', body }),
   resetNeighbourhood: () => request<MessageResponse>('/api/admin/neighbourhood/reset', { method: 'POST' }),
   exportNeighbourhood: () => requestText('/api/admin/neighbourhood/export'),
+
+  users: () => request<User[]>('/api/admin/users'),
+  createUser: (body: NewUser) => request<User>('/api/admin/users', { method: 'POST', body }),
+  updateUser: (userId: string, changes: UserUpdate) =>
+    request<User>(`/api/admin/users/${userId}`, { method: 'PUT', body: changes }),
+  deleteUser: (userId: string) =>
+    request<{ deleted: boolean; user_id: string }>(`/api/admin/users/${userId}`, { method: 'DELETE' }),
 
   config: () => request<SimConfig>('/api/config'),
   updateConfig: (changes: Partial<EditableConfig>) =>
