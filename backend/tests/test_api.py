@@ -30,6 +30,7 @@ from app.db.init_data import seed_houses  # noqa: E402
 from app.db.repositories import UserRepository  # noqa: E402
 from app.services import settlement  # noqa: E402
 from app.services.auth import create_access_token  # noqa: E402
+from app.services.rate_limit import login_failures, registrations  # noqa: E402
 from app.services.simulation_loop import sim  # noqa: E402
 from app.services.users import create_user  # noqa: E402
 from app.settings import settings  # noqa: E402
@@ -94,6 +95,28 @@ def test_root_redirects_to_docs(client):
 def test_login_rejects_bad_password(client):
     r = client.post("/api/auth/login", json={"username": "user1", "password": "gresit"})
     assert r.status_code == 401
+
+
+def test_login_locks_a_username_after_repeated_failures(client):
+    for _ in range(settings.login_max_failures):
+        r = client.post("/api/auth/login", json={"username": "user2", "password": "gresit"})
+        assert r.status_code == 401
+    r = client.post("/api/auth/login", json={"username": "user2", "password": PASSWORD})
+    assert r.status_code == 429 and "Retry-After" in r.headers
+    assert client.post("/api/auth/login", json={"username": "user1", "password": PASSWORD}).status_code == 200
+    login_failures.reset()
+    assert client.post("/api/auth/login", json={"username": "user2", "password": PASSWORD}).status_code == 200
+
+
+def test_register_is_rate_limited(client, monkeypatch):
+    registrations.reset()
+    monkeypatch.setattr(settings, "register_max_per_hour", 2)
+    for i in range(2):
+        r = client.post("/api/auth/register", json={"username": f"limita{i}", "password": PASSWORD})
+        assert r.status_code == 201
+    r = client.post("/api/auth/register", json={"username": "limita2", "password": PASSWORD})
+    assert r.status_code == 429
+    registrations.reset()
 
 
 def test_login_returns_house_and_role(client):

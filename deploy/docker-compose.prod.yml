@@ -43,7 +43,8 @@ services:
       SIM_PRICE_YEAR: ${SIM_PRICE_YEAR:-2025}
       INITIAL_WALLET_LEI: ${INITIAL_WALLET_LEI:-100}
       OPERATOR_WALLET_LEI: ${OPERATOR_WALLET_LEI:-10000}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-123}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?lipseste din .env}
+      ENVIRONMENT: production
     networks:
       default:
         aliases: [prod-api]

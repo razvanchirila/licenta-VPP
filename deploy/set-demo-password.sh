@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Schimba parola conturilor demo (admin, user1..user10) intr-un mediu. Parola se citeste fara ecou, ajunge doar
-# in .env (chmod 600), iar api-ul este recreat ca seed.py sa o aplice. O parola goala revine la 123.
+# in .env (chmod 600), iar api-ul este recreat ca seed.py sa o aplice.
 #   ssh -t -i ~/.ssh/vpp_azure vpp@<server> /opt/vpp/set-demo-password.sh [prod|staging]
 set -euo pipefail
 
@@ -11,21 +11,19 @@ case "$env" in
     *) echo "folosire: $0 [prod|staging]" >&2; exit 2 ;;
 esac
 
-read -rsp "Parola noua pentru conturile demo ($env), gol = 123: " p
+read -rsp "Parola noua pentru conturile demo ($env): " p
 echo
-if [ -n "$p" ]; then
-    read -rsp "Inca o data: " q
-    echo
-    [ "$p" = "$q" ] || { echo "Parolele difera, nu am schimbat nimic." >&2; exit 1; }
-    [[ $p != *"'"* ]] || { echo "Parola nu poate contine apostrof." >&2; exit 1; }
-    bytes=$(LC_ALL=C; echo ${#p})
-    [ "$bytes" -ge 8 ] && [ "$bytes" -le 72 ] || { echo "Parola trebuie sa aiba intre 8 si 72 de octeti." >&2; exit 1; }
-fi
+read -rsp "Inca o data: " q
+echo
+[ "$p" = "$q" ] || { echo "Parolele difera, nu am schimbat nimic." >&2; exit 1; }
+[[ $p != *"'"* ]] || { echo "Parola nu poate contine apostrof." >&2; exit 1; }
+bytes=$(LC_ALL=C; echo ${#p})
+[ "$bytes" -ge 8 ] && [ "$bytes" -le 72 ] || { echo "Parola trebuie sa aiba intre 8 si 72 de octeti." >&2; exit 1; }
 
 umask 077
 {
     grep -v '^DEMO_PASSWORD=' .env || true
-    [ -z "$p" ] || printf "DEMO_PASSWORD='%s'\n" "$p"
+    printf "DEMO_PASSWORD='%s'\n" "$p"
 } > .env.new
 mv .env.new .env
 unset p q

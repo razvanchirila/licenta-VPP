@@ -45,7 +45,8 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title="VPP Simulator API", version="2.0.0", lifespan=lifespan)
+docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.is_production else {}
+app = FastAPI(title="VPP Simulator API", version="2.0.0", lifespan=lifespan, **docs)
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,7 +72,7 @@ async def validation_error(_request, exc: RequestValidationError):
 @app.get("/", include_in_schema=False)
 def root():
     """The operator panel is served by the web container under /admin; the API root only points to the docs."""
-    return RedirectResponse("/docs")
+    return RedirectResponse("/health" if settings.is_production else "/docs")
 
 
 @app.get("/health")

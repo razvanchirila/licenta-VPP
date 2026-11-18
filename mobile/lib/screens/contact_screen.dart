@@ -75,9 +75,9 @@ class ContactScreen extends StatelessWidget {
                     context: context,
                     icon: Icons.phone_rounded,
                     title: 'Telefon',
-                    subtitle: '+40 721 234 567',
+                    subtitle: '+40 700 000 000',
                     color: AppColors.green,
-                    onTap: () => _copyToClipboard(context, '+40721234567'),
+                    onTap: () => _copyToClipboard(context, '+40700000000'),
                   ),
                   const SizedBox(height: 12),
                   _buildContactOption(
