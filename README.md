@@ -32,18 +32,24 @@ Demo credentials are available on request.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  app[Flutter app<br/>residents] --> web[nginx<br/>static builds + /api proxy]
+  admin[React admin<br/>operator] --> web
+  web --> api[FastAPI<br/>simulation, controllers, settlement]
+  api --> db[(PostgreSQL 16)]
+  caddy[Caddy<br/>automatic HTTPS] --> web
 ```
- Flutter app (residents)      React admin (operator)
-          \                        /
-           +---- nginx (web) -----+          static builds + /api reverse proxy
-                      |
-                 FastAPI (api)  ---- simulation loop, controllers, settlement
-                      |
-                 PostgreSQL 16
 
- GitHub Actions --> ghcr.io images --> SSH deploy --> Azure VM
-   develop  -> staging stack  (staging.<host>)
-   main     -> production stack (Caddy, automatic HTTPS)
+```mermaid
+flowchart LR
+  pr[Pull request] --> ci[GitHub Actions<br/>tests, lint, build]
+  ci --> ghcr[GHCR images]
+  ghcr -->|develop| staging[Staging stack]
+  ghcr -->|main| prod[Production stack]
+  staging --> vm[Azure VM]
+  prod --> vm
+  vm -.->|health check failed| rollback[Automatic rollback]
 ```
 
 ## Tech stack
