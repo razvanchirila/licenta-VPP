@@ -32,10 +32,12 @@ class SimTimeChip extends StatelessWidget {
   }
 }
 
+/// Shown over stale data. [offline] = the server could not be reached; otherwise it answered with an error.
 class ConnectionBanner extends StatelessWidget {
   final String message;
+  final bool offline;
 
-  const ConnectionBanner({super.key, required this.message});
+  const ConnectionBanner({super.key, required this.message, required this.offline});
 
   @override
   Widget build(BuildContext context) {
@@ -49,11 +51,11 @@ class ConnectionBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.wifi_off_rounded, color: AppColors.red, size: 16),
+          Icon(offline ? Icons.wifi_off_rounded : Icons.error_outline_rounded, color: AppColors.red, size: 16),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Conexiune pierdută: $message. Date de la ultima actualizare.',
+              '${offline ? 'Conexiune pierdută' : 'Actualizare eșuată'}: $message. Date de la ultima actualizare.',
               style: GoogleFonts.inter(color: Colors.white70, fontSize: 11),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

@@ -16,23 +16,11 @@ class TopIndicator extends StatelessWidget {
     this.semanticsId,
   });
 
-  String _getLocalizedLabel(String label) {
-    switch (label) {
-      case 'SOLAR':
-        return 'SOLAR';
-      case 'HOME':
-        return 'CONSUM';
-      default:
-        return label;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final localized = _getLocalizedLabel(label);
     return _PowerSemantics(
       id: semanticsId,
-      label: localized,
+      label: label,
       value: '${value.toStringAsFixed(1)} kW',
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -46,15 +34,7 @@ class TopIndicator extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            localized,
-            style: GoogleFonts.inter(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
-            ),
-          ),
+          Text(label, style: _flowLabelStyle),
         ],
       ),
     );
@@ -74,19 +54,9 @@ class BottomIndicator extends StatelessWidget {
     this.semanticsId,
   });
 
-  String _getLocalizedLabel(String label) {
-    switch (label) {
-      case 'GRID':
-        return 'REȚEA';
-      default:
-        return label;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isActive = value.abs() > FlowThresholds.gridKw;
-    final localized = _getLocalizedLabel(label);
     final direction = !isActive
         ? ''
         : value > 0
@@ -94,7 +64,7 @@ class BottomIndicator extends StatelessWidget {
             : ' export';
     return _PowerSemantics(
       id: semanticsId,
-      label: localized,
+      label: label,
       value: '${value.abs().toStringAsFixed(1)} kW$direction',
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -108,15 +78,41 @@ class BottomIndicator extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
+          Text(label, style: _flowLabelStyle),
+        ],
+      ),
+    );
+  }
+}
+
+/// Energy traded with the other houses: `value` > 0 = bought, < 0 = sold. It has no line in the
+/// picture (it travels over the grid connection), so the label carries the direction.
+class NeighbourIndicator extends StatelessWidget {
+  final double value;
+
+  const NeighbourIndicator({super.key, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = value.abs() > FlowThresholds.gridKw;
+    final buying = value > 0;
+    return _PowerSemantics(
+      id: 'home-p2p',
+      label: 'Vecini',
+      value: '${value.abs().toStringAsFixed(1)} kW${!isActive ? '' : buying ? ' cumpărare' : ' vânzare'}',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Text(
-            localized,
+            '${value.abs().toStringAsFixed(1)} kW',
             style: GoogleFonts.inter(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 10,
+              color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.5),
+              fontSize: 16,
               fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
             ),
           ),
+          const SizedBox(height: 2),
+          Text(!isActive ? 'VECINI' : (buying ? 'DE LA VECINI' : 'CĂTRE VECINI'), style: _flowLabelStyle),
         ],
       ),
     );
@@ -188,21 +184,18 @@ class BatteryIndicator extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 2),
-        ExcludeSemantics(
-          child: Text(
-            'BATERIE',
-            style: GoogleFonts.inter(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
+        ExcludeSemantics(child: Text('BATERIE', style: _flowLabelStyle)),
       ],
     );
   }
 }
+
+TextStyle get _flowLabelStyle => GoogleFonts.inter(
+      color: Colors.white.withValues(alpha: 0.5),
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 1.2,
+    );
 
 /// One readable node per value ("Solar 3.1 kW") instead of two loose text fragments.
 class _PowerSemantics extends StatelessWidget {

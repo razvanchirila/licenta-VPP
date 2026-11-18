@@ -104,7 +104,32 @@ Map<String, dynamic> house() => {
         'soc_kwh': 21.7,
         'soc_percent': 67.8,
         'p2p_enabled': true,
+        'temp_in_c': 21.4,
       },
+    };
+
+Map<String, dynamic> currentUser() => {
+      'user_id': 3,
+      'username': 'user3',
+      'house_id': houseId,
+      'house_name': 'Casa 3 – Str. Mărășești nr. 112, Bacău',
+      'is_admin': false,
+      'created_at': '2026-10-02T12:00:00',
+    };
+
+Map<String, dynamic> simConfig() => {
+      'controller': 'mpc',
+      'tick_seconds': 2.0,
+      'import_max_kw': 50.0,
+      'export_max_kw': 40.0,
+      'internal_line_kw': 30.0,
+      'p2p_price_factor': 0.6,
+      'min_p2p_balance_lei': 8.0,
+      'seed': 42,
+      'dt_hours': 0.25,
+      'data_source': 'sintetic',
+      'data_year': 2025,
+      'controllers': ['reguli', 'mpc'],
     };
 
 Map<String, dynamic> simPrices() => {
@@ -326,16 +351,28 @@ Object? _route(http.Request request) {
   final q = request.url.queryParameters;
   if (request.url.host == 'api.forecast.solar') return solarForecast(DateTime.now());
   if (path.endsWith('/me/house')) return house();
+  if (path.endsWith('/auth/me')) return currentUser();
+  if (path.endsWith('/config')) return simConfig();
   if (path.endsWith('/sim/prices')) return simPrices();
   if (path.endsWith('/me/settings')) return settings();
-  if (path.endsWith('/me/devices')) return devices;
+  if (path.endsWith('/me/devices')) {
+    return request.method == 'POST' ? {'id': 99, ...json.decode(request.body) as Map<String, dynamic>} : devices;
+  }
+  if (path.contains('/me/devices/') && request.method == 'PUT') {
+    final id = int.parse(request.url.pathSegments.last);
+    return {...devices.firstWhere((d) => d['id'] == id), ...json.decode(request.body) as Map<String, dynamic>};
+  }
   if (path.endsWith('/me/energy/chart')) return energyChart(q['period'] ?? 'day');
   if (path.endsWith('/me/energy/impact')) return impact();
   if (path.endsWith('/stats/summary')) return statsSummary(q['period'] ?? 'month');
   if (path.endsWith('/stats/top-consumers')) return topConsumers(q['period'] ?? 'month');
   if (path.endsWith('/stats/comparison')) return comparison();
   if (path.endsWith('/stats/chart')) return statsChart(q['start_date']!, q['end_date']!);
-  if (path.contains('/trading/preferences/')) return tradingPrefs();
+  if (path.contains('/trading/preferences/')) {
+    return request.method == 'PUT'
+        ? {...tradingPrefs(), ...json.decode(request.body) as Map<String, dynamic>}
+        : tradingPrefs();
+  }
   if (path.contains('/trading/history/')) return {'transactions': List.generate(12, (i) => trade(i + 1))};
   if (path.contains('/trading/stats/')) return tradingStats();
   if (path.endsWith('/transactions')) return {'transactions': List.generate(12, (i) => walletTx(i + 1))};
@@ -346,8 +383,12 @@ Object? _route(http.Request request) {
 /// Every request is recorded so tests can check which URLs the screens asked for.
 final List<Uri> requestLog = [];
 
+/// POST and PUT requests, for tests that check what a form sent.
+final List<http.Request> writeLog = [];
+
 http.Client fixtureClient() => MockClient((request) async {
       requestLog.add(request.url);
+      if (request.method != 'GET') writeLog.add(request);
       final body = _route(request);
       if (body == null) return http.Response('{"detail": "Not found"}', 404);
       return http.Response.bytes(

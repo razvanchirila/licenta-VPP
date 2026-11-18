@@ -54,8 +54,8 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
       final updated = await userApiService.toggleDevice(device.id);
       if (!mounted) return;
       updateData(_devices.map((d) => d.id == updated.id ? updated : d).toList());
-    } on ApiException catch (e) {
-      _showSnackBar(e.message, isError: true);
+    } catch (e) {
+      _showSnackBar(ApiException.from(e).message, isError: true);
     } finally {
       if (mounted) setState(() => _busy.remove(device.id));
     }
@@ -103,6 +103,14 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
     if (created != null && mounted) {
       updateData([..._devices, created]);
       _showSnackBar('${created.name} a fost adăugat');
+    }
+  }
+
+  Future<void> _editDevice(Device device) async {
+    final updated = await AddDeviceSheet.show(context, device: device);
+    if (updated != null && mounted) {
+      updateData(_devices.map((d) => d.id == updated.id ? updated : d).toList());
+      _showSnackBar('${updated.name} a fost actualizat');
     }
   }
 
@@ -161,7 +169,7 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
             const SectionHeader(
               icon: Icons.priority_high_rounded,
               title: 'Dispozitive critice',
-              subtitle: 'Mereu pornite, nu pot fi oprite',
+              subtitle: 'Mereu pornite, nu pot fi oprite; atinge pentru detalii și editare',
               color: AppColors.red,
             ),
             const SizedBox(height: 12),
@@ -171,7 +179,7 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
             const SectionHeader(
               icon: Icons.devices_other_rounded,
               title: 'Alte dispozitive',
-              subtitle: 'Control manual, ține apăsat pentru ștergere',
+              subtitle: 'Atinge pentru detalii și editare, ține apăsat pentru ștergere',
               color: AppColors.blue,
             ),
             const SizedBox(height: 12),
@@ -222,6 +230,17 @@ class _DevicesScreenState extends State<DevicesScreen> with AsyncLoader<List<Dev
           ],
         ),
         actions: [
+          Semantics(
+            container: true,
+            identifier: 'device-edit',
+            child: TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _editDevice(device);
+              },
+              child: Text('Editează', style: GoogleFonts.inter(color: AppColors.green)),
+            ),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Închide', style: GoogleFonts.inter(color: Colors.white54)),

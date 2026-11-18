@@ -10,7 +10,8 @@ import { heatingLabel, insulationLabel, sameSpec, toggleDevice } from '../lib/ne
 import type { HouseSpec, Neighbourhood } from '../types/api'
 import styles from './NeighbourhoodPage.module.css'
 
-const PEOPLE = [1, 2, 3, 4, 5, 6, 7, 8]
+// the same range the server accepts
+const PEOPLE = Array.from({ length: 12 }, (_, i) => i + 1)
 
 interface HouseEditorProps {
   saved: HouseSpec

@@ -36,7 +36,7 @@ class ConsumptionSummaryCard extends StatelessWidget {
               Expanded(
                 child: _stat(
                   'Cost estimat',
-                  '${summary.estimatedCost.toStringAsFixed(2)} ${summary.currency}',
+                  formatLei(summary.estimatedCost),
                   Icons.attach_money,
                   Colors.green,
                 ),

@@ -1,17 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/formatters.dart';
 import 'package:flutter_interface/core/theme.dart';
+import 'package:flutter_interface/models/sim_prices.dart';
 import 'package:flutter_interface/models/trading.dart';
 import 'package:flutter_interface/services/api_client.dart';
 import 'package:flutter_interface/services/user_api_service.dart';
 
+/// Upper bound of `fixed_price_lei_kwh` in the backend schema.
+const double maxFixedPriceLeiKwh = 10;
+
+double? parseFixedPrice(String text) => double.tryParse(text.trim().replaceAll(',', '.'));
+
+/// Null when [text] is a price the server accepts.
+String? fixedPriceError(String text) {
+  if (text.trim().isEmpty) return 'Introdu un preț';
+  final value = parseFixedPrice(text);
+  if (value == null || value < 0) return 'Prețul nu este un număr valid';
+  if (value > maxFixedPriceLeiKwh) return 'Prețul poate fi cel mult ${maxFixedPriceLeiKwh.round()} lei/kWh';
+  return null;
+}
+
 /// Keeps its edits while the user swaps tabs.
 class TradingSettingsTab extends StatefulWidget {
   final TradingPrefs prefs;
+  final SimConfig? config;
   final void Function(String message, {bool isError}) onMessage;
 
-  const TradingSettingsTab({super.key, required this.prefs, required this.onMessage});
+  const TradingSettingsTab({super.key, required this.prefs, required this.onMessage, this.config});
 
   @override
   State<TradingSettingsTab> createState() => _TradingSettingsTabState();
@@ -26,6 +43,7 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
   String _priceMode = 'discount';
   double _discountPercent = 20.0;
   double _fixedPrice = 0.8;
+  String? _fixedPriceError;
   bool _isSaving = false;
 
   @override
@@ -57,9 +75,35 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
     _discountPercent = prefs.discountPercent.clamp(0, 50).toDouble();
     _fixedPrice = prefs.fixedPriceLeiKwh;
     _fixedPriceController.text = _fixedPrice.toStringAsFixed(2);
+    _fixedPriceError = null;
+  }
+
+  void _onFixedPriceChanged(String text) {
+    final error = fixedPriceError(text);
+    if (error == null) _fixedPrice = parseFixedPrice(text)!;
+    setState(() => _fixedPriceError = error);
+  }
+
+  String get _participationHint {
+    final min = widget.config?.minP2pBalanceLei;
+    const start = 'Casa participă la P2P doar dacă ambele opțiuni sunt active și soldul';
+    if (min == null) return '$start nu este sub pragul minim stabilit de operator.';
+    return '$start este de cel puțin ${formatLei(min, decimals: min == min.roundToDouble() ? 0 : 2)}.';
+  }
+
+  String get _priceHint {
+    final factor = widget.config?.p2pPriceFactor;
+    final share = factor == null ? 'un procent stabilit de operator' : '${(factor * 100).round()}%';
+    return 'În simulare prețul P2P este unic pe comunitate ($share din prețul de import); '
+        'preferința este doar memorată.';
   }
 
   Future<void> _savePreferences() async {
+    // the field is hidden in discount mode, so an error left in it must not block saving
+    if (_priceMode == 'fixed' && _fixedPriceError != null) {
+      widget.onMessage('Corectează prețul fix înainte de salvare', isError: true);
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       final prefs = await userApiService.updateTradingPreferences(
@@ -110,17 +154,11 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
             onChanged: (value) => setState(() => _buyingEnabled = value),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Casa participă la P2P doar dacă ambele opțiuni sunt active și soldul este de cel puțin 5 lei.',
-            style: AppText.hint,
-          ),
+          Text(_participationHint, style: AppText.hint),
           const SizedBox(height: 24),
           Text('Preț de vânzare (preferință)', style: AppText.sectionTitle),
           const SizedBox(height: 4),
-          Text(
-            'În simulare prețul P2P este unic pe comunitate (70% din prețul de import); preferința este doar memorată.',
-            style: AppText.hint,
-          ),
+          Text(_priceHint, style: AppText.hint),
           const SizedBox(height: 12),
           _PriceModeSelector(mode: _priceMode, onChanged: (m) => setState(() => _priceMode = m)),
           const SizedBox(height: 16),
@@ -129,10 +167,8 @@ class _TradingSettingsTabState extends State<TradingSettingsTab> with AutomaticK
           if (_priceMode == 'fixed')
             _FixedPriceInput(
               controller: _fixedPriceController,
-              onChanged: (value) {
-                final parsed = double.tryParse(value.replaceAll(',', '.'));
-                if (parsed != null && parsed >= 0 && parsed <= 10) _fixedPrice = parsed;
-              },
+              errorText: _fixedPriceError,
+              onChanged: _onFixedPriceChanged,
             ),
           const SizedBox(height: 32),
           SizedBox(
@@ -229,7 +265,7 @@ class _PriceModeSelector extends StatelessWidget {
       decoration: AppTheme.surfaceDecoration(),
       child: Row(
         children: [
-          _option('discount', '% Discount'),
+          _option('discount', 'Reducere %'),
           _option('fixed', 'Preț fix'),
         ],
       ),
@@ -283,7 +319,7 @@ class _DiscountSlider extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Flexible(
-                child: Text('Discount față de prețul rețelei', style: GoogleFonts.inter(color: Colors.white)),
+                child: Text('Reducere față de prețul rețelei', style: GoogleFonts.inter(color: Colors.white)),
               ),
               Semantics(
                 container: true,
@@ -297,7 +333,7 @@ class _DiscountSlider extends StatelessWidget {
           Semantics(
             container: true,
             identifier: 'trading-discount',
-            label: 'Discount față de prețul rețelei',
+            label: 'Reducere față de prețul rețelei',
             child: Slider(
               value: value,
               min: 0,
@@ -317,9 +353,10 @@ class _DiscountSlider extends StatelessWidget {
 
 class _FixedPriceInput extends StatelessWidget {
   final TextEditingController controller;
+  final String? errorText;
   final ValueChanged<String> onChanged;
 
-  const _FixedPriceInput({required this.controller, required this.onChanged});
+  const _FixedPriceInput({required this.controller, required this.errorText, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -347,6 +384,8 @@ class _FixedPriceInput extends StatelessWidget {
                 hintStyle: GoogleFonts.inter(color: Colors.white38),
                 suffixText: 'lei/kWh',
                 suffixStyle: GoogleFonts.inter(color: Colors.white54),
+                errorText: errorText,
+                errorStyle: GoogleFonts.inter(color: AppColors.red, fontSize: 12),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
@@ -357,7 +396,7 @@ class _FixedPriceInput extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Între 0 și 10 lei/kWh, cu punct sau virgulă pentru zecimale',
+            'Între 0 și ${maxFixedPriceLeiKwh.round()} lei/kWh, cu punct sau virgulă pentru zecimale',
             style: GoogleFonts.inter(color: Colors.white38, fontSize: 11),
           ),
         ],

@@ -57,6 +57,7 @@ class PriceHeader extends StatelessWidget {
               if (onRefresh != null)
                 IconButton(
                   onPressed: isLoading ? null : onRefresh,
+                  tooltip: 'Reîncarcă prețurile',
                   icon: isLoading
                       ? const SizedBox(
                           width: 20,

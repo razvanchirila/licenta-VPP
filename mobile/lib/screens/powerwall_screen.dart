@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_interface/core/browser_viewport.dart';
 import 'package:flutter_interface/core/energy_flow.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/models/house.dart';
@@ -47,6 +48,7 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
     super.initState();
     appState.addListener(_onAppStateChanged);
     _lifecycle = AppLifecycleListener(onHide: _stopRefresh, onShow: _startRefresh);
+    _syncSession();
     _startRefresh();
     _loadWeather();
 
@@ -104,18 +106,22 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
         _fetchPricesOrNull(),
       ]);
       if (!mounted) return;
+      final house = results[0] as House;
       final prices = results[1] as SimPrices? ?? _prices;
       setState(() {
-        _house = results[0] as House;
+        _house = house;
         _prices = prices;
         _error = null;
         _loading = false;
       });
       _updateDayMode(prices);
-    } on ApiException catch (e) {
+      appState.setIndoorTemperature(house.lastStep?.tempInC);
+      // an operator gave the account a house while the app was open
+      if (house.id != authState.houseId) _syncSession();
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e;
+        _error = ApiException.from(e);
         _loading = false;
       });
     } finally {
@@ -123,11 +129,26 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
     }
   }
 
+  Future<void> _syncSession() async {
+    try {
+      await userApiService.refreshSession();
+    } catch (_) {
+      // the copy saved at login stays; an expired token already logged the user out
+    }
+  }
+
+  /// The spinner is cleared by the refresh that ends next, this one or one already on its way.
+  void _retry() {
+    setState(() => _loading = true);
+    _syncSession();
+    _refresh();
+  }
+
   /// The price curve is optional: the dashboard still works without it.
   Future<SimPrices?> _fetchPricesOrNull() async {
     try {
       return await userApiService.getSimPrices();
-    } on ApiException {
+    } catch (_) {
       return null;
     }
   }
@@ -197,7 +218,15 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
     }
     final house = _house;
     if (house == null) {
-      return SafeArea(child: HomeErrorState(error: _error, onRetry: _refresh, onLogout: userApiService.logout));
+      return SafeArea(
+        child: HomeErrorState(
+          error: _error,
+          isAdmin: authState.isAdmin,
+          operatorPanelUrl: operatorPanelUrl(),
+          onRetry: _retry,
+          onLogout: userApiService.logout,
+        ),
+      );
     }
     return _buildDashboard(house);
   }
@@ -215,6 +244,7 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
     final image = appState.getHouseImagePath();
     final percent = house.batteryPercent.round();
     final gridKw = step?.gridKw ?? 0.0;
+    final neighbourKw = step != null && step.p2pEnabled ? step.p2pKw : null;
     final solarKw = step?.pvKw ?? 0.0;
     final homeKw = step?.loadKw ?? house.currentConsumptionKw;
     final rising = prices?.isRising(PriceSeries.import) ?? false;
@@ -236,16 +266,17 @@ class _PowerwallScreenState extends State<PowerwallScreen> {
                   onProfileTap: _showProfileMenu,
                 ),
               ),
-              if (_error != null) ConnectionBanner(message: _error!.message),
+              if (_error != null) ConnectionBanner(message: _error!.message, offline: _error!.isNetworkError),
               Expanded(
                 child: _section(
                   'house',
-                  (image, batteryKw, percent, gridKw, solarKw, homeKw),
+                  (image, batteryKw, percent, gridKw, neighbourKw, solarKw, homeKw),
                   () => HouseSection(
                     houseImage: image,
                     batteryPower: batteryKw,
                     powerwallPercentage: percent,
                     gridPower: gridKw,
+                    neighbourPower: neighbourKw,
                     solarPower: solarKw,
                     homePower: homeKw,
                   ),

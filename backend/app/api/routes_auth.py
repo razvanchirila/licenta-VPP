@@ -7,6 +7,7 @@ from app.db.database import get_session
 from app.db.models import UserModel
 from app.db.repositories import UserRepository
 from app.services.auth import create_access_token, verify_password
+from app.services.rate_limit import login_failures, registrations
 from app.services.serializers import user_dict
 from app.services.users import create_user
 from app.settings import settings
@@ -14,11 +15,21 @@ from app.settings import settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _too_many(window) -> HTTPException:
+    return HTTPException(429, "Prea multe incercari, mai incearca peste cateva minute",
+                         headers={"Retry-After": str(int(window.window))})
+
+
 @router.post("/login")
 async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)):
+    key = body.username.lower()
+    if login_failures.count(key) >= settings.login_max_failures:
+        raise _too_many(login_failures)
     user = await UserRepository(session).get_by_username(body.username)
     if user is None or not verify_password(body.password, user.password_hash):
+        login_failures.hit(key)
         raise HTTPException(401, "Utilizator sau parola gresita")
+    login_failures.reset(key)
     return {
         "access_token": create_access_token(user.id),
         "token_type": "bearer",
@@ -32,6 +43,9 @@ async def login(body: LoginRequest, session: AsyncSession = Depends(get_session)
 
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest, session: AsyncSession = Depends(get_session)):
+    if registrations.count("all") >= settings.register_max_per_hour:
+        raise _too_many(registrations)
+    registrations.hit("all")
     user = await create_user(session, body.username, body.password)
     if user is None:
         raise HTTPException(400, "Numele de utilizator exista deja")

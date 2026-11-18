@@ -1,9 +1,10 @@
 import clsx from 'clsx'
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import { useAuth } from '../hooks/useAuth'
 import { useLive } from '../hooks/useLive'
 import { formatDate } from '../lib/format'
 import { simStateLabel } from '../lib/simState'
+import { ErrorBoundary } from './ErrorBoundary'
 import styles from './Layout.module.css'
 
 const NAV = [
@@ -11,11 +12,13 @@ const NAV = [
   { to: '/case', label: 'Case', end: false },
   { to: '/cartier', label: 'Cartier', end: false },
   { to: '/simulare', label: 'Simulare', end: false },
+  { to: '/utilizatori', label: 'Utilizatori', end: false },
 ]
 
 export function Layout() {
   const { user, logout } = useAuth()
   const { status, connection } = useLive()
+  const { pathname } = useLocation()
   const sim = simStateLabel(status)
   const connected = connection.state === 'open'
   const connectionText = connected
@@ -70,7 +73,9 @@ export function Layout() {
 
       <main className={styles.main}>
         {status?.last_error && <div className={styles.error}>Ultima eroare a simulării: {status.last_error}</div>}
-        <Outlet />
+        <ErrorBoundary resetKey={pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   )

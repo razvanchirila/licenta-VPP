@@ -117,32 +117,34 @@ export function CommunityMap({ step }: { step: StepResult | null }) {
 
   return (
     <div className={styles.wrap}>
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className={styles.svg} role="group" aria-label="Harta comunității">
-        <defs>
-          <marker id="p2p-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--series-p2p)" />
-          </marker>
-        </defs>
-        <line x1={PAD_X} x2={WIDTH - PAD_X} y1={BUS_Y} y2={BUS_Y} className={styles.bus} />
-        <text x={PAD_X} y={BUS_Y - 8} className={styles.busLabel}>
-          linia internă a comunității
-        </text>
-        {houses.map((h, i) => (
-          <HouseNode key={h.id} house={h} index={i} onOpen={(id) => navigate(`/case/${id}`)} />
-        ))}
-        {flows.map((f) => (
-          <path
-            key={`${f.from}-${f.to}`}
-            d={f.path}
-            className={styles.flow}
-            data-testid="p2p-flow"
-            strokeWidth={2 + 3 * (f.kwh / maxKwh)}
-            markerEnd="url(#p2p-arrow)"
-          >
-            <title>{`${names.get(f.from)} → ${names.get(f.to)}: ${formatNumber(f.kwh, 3)} kWh`}</title>
-          </path>
-        ))}
-      </svg>
+      <div className={styles.scroll}>
+        <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className={styles.svg} role="group" aria-label="Harta comunității">
+          <defs>
+            <marker id="p2p-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--series-p2p)" />
+            </marker>
+          </defs>
+          <line x1={PAD_X} x2={WIDTH - PAD_X} y1={BUS_Y} y2={BUS_Y} className={styles.bus} />
+          <text x={PAD_X} y={BUS_Y - 8} className={styles.busLabel}>
+            linia internă a comunității
+          </text>
+          {houses.map((h, i) => (
+            <HouseNode key={h.id} house={h} index={i} onOpen={(id) => navigate(`/case/${id}`)} />
+          ))}
+          {flows.map((f) => (
+            <path
+              key={`${f.from}-${f.to}`}
+              d={f.path}
+              className={styles.flow}
+              data-testid="p2p-flow"
+              strokeWidth={2 + 3 * (f.kwh / maxKwh)}
+              markerEnd="url(#p2p-arrow)"
+            >
+              <title>{`${names.get(f.from)} → ${names.get(f.to)}: ${formatNumber(f.kwh, 3)} kWh`}</title>
+            </path>
+          ))}
+        </svg>
+      </div>
       <div className={styles.legend}>
         <span>
           <i className={styles.legendFlow} /> schimb P2P în ultimul pas: {flows.length}

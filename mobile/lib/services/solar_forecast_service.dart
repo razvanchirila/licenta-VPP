@@ -11,7 +11,6 @@ class SolarForecastService {
   static const double defaultDeclination = 35.0; // tilt angle
   static const double defaultAzimuth = 180.0; // south facing
   static const double defaultKwp = 10.0;
-  static const double defaultBatteryCapacityKwh = 20.0;
 
   static const String _cacheKey = 'solar_forecast_cache';
   static const String _cacheTimestampKey = 'solar_forecast_timestamp';

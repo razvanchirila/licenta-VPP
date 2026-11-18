@@ -23,7 +23,7 @@ async def prices(_: UserModel = Depends(get_current_user)):
 
 
 @router.get("/history")
-async def history(limit: int = Query(96, ge=1, le=600), _: UserModel = Depends(get_current_user)):
+async def history(limit: int = Query(96, ge=1, le=600), _: UserModel = Depends(require_admin)):
     items = list(sim.history)[-limit:]
     return {"count": len(items), "steps": items}
 

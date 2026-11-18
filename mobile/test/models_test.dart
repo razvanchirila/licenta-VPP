@@ -65,6 +65,21 @@ void main() {
       expect(house.batteryPercent, 65.0);
     });
 
+    test('last_step carries the indoor temperature only for a house with a thermal model', () {
+      House withStep(Map<String, dynamic> step) => House.fromJson({'id': 5, 'name': 'Casa 5', 'last_step': step});
+
+      expect(withStep({'pv_kw': 0.0, 'temp_in_c': 21.4}).lastStep!.tempInC, 21.4);
+      expect(withStep({'pv_kw': 0.0, 'temp_in_c': 20}).lastStep!.tempInC, 20.0);
+      expect(withStep({'pv_kw': 0.0, 'temp_in_c': null}).lastStep!.tempInC, isNull);
+      expect(withStep({'pv_kw': 0.0}).lastStep!.tempInC, isNull);
+    });
+
+    test('P2P power of the last step: positive when buying from neighbours', () {
+      final step = HouseStep.fromJson({'p2p_in_kw': 0.6, 'p2p_out_kw': 0.0, 'p2p_enabled': true});
+      expect(step.p2pKw, closeTo(0.6, 1e-9));
+      expect(HouseStep.fromJson({'p2p_in_kw': 0.0, 'p2p_out_kw': 1.5}).p2pKw, closeTo(-1.5, 1e-9));
+    });
+
     test('tolerates a house without battery and without last_step', () {
       final house = House.fromJson({'id': 4, 'name': 'Casa 4', 'battery': null, 'last_step': null});
       expect(house.hasBattery, isFalse);
@@ -131,6 +146,18 @@ void main() {
       expect(prices.isRising(PriceSeries.import), isTrue);
       expect(prices.max(PriceSeries.p2p), 0.49);
       expect(prices.avg(PriceSeries.export), closeTo(0.2, 1e-9));
+    });
+
+    test('config: controller and the P2P rules shown in the app', () {
+      final config = SimConfig.fromJson({'controller': 'mpc', 'p2p_price_factor': 0.7, 'min_p2p_balance_lei': 5});
+      expect(config.isMpc, isTrue);
+      expect(config.p2pPriceFactor, 0.7);
+      expect(config.minP2pBalanceLei, 5.0);
+
+      final partial = SimConfig.fromJson({'controller': 'reguli'});
+      expect(partial.isMpc, isFalse);
+      expect(partial.p2pPriceFactor, isNull);
+      expect(partial.minP2pBalanceLei, isNull);
     });
 
     test('empty curve does not crash', () {

@@ -56,6 +56,7 @@ DATA_SOURCES = ("real", "sintetic")
 EPS = 1e-9
 MIN_TRADE_KWH = 0.005   # smaller seller->buyer shares are not worth a wallet transaction
 HISTORY_SIZE = 600
+MAX_FAILED_STEPS = 5    # in a row; the loop then pauses until /sim/resume
 
 
 def data_day(day: date, year: int) -> date:
@@ -347,15 +348,22 @@ class SimulationLoop:
             self._task = None
 
     async def _run(self) -> None:
+        failed = 0
         while self.running:
             if not self.paused:
                 try:
                     result = await self.step()
+                    failed = 0
                     await self.broadcast(result)
                 except Exception as e:
-                    logger.exception("Simulation step failed")
+                    # a failed step changed nothing, so the next tick simply tries the same step again
+                    failed += 1
+                    logger.exception("Simulation step failed (%d in a row)", failed)
                     self.last_error = str(e)
-                    self.paused = True
+                    if failed >= MAX_FAILED_STEPS:
+                        logger.error("Simulation paused after %d failed steps", failed)
+                        self.paused = True
+                        failed = 0
             await asyncio.sleep(self.config.tick_seconds)
 
     def _sync(self, houses: list[HouseModel]) -> None:
@@ -452,19 +460,23 @@ class SimulationLoop:
                 self._apply_to_batteries(dispatch)
                 trades = self._split_trades(dispatch, houses, inputs)
                 settled = await self._persist(session, houses, inputs, dispatch, trades)
-            except Exception:
+                await session.commit()
+            except BaseException:
+                # also CancelledError (/sim/stop in the middle of a step): the transaction is rolled back,
+                # so the SOC goes back too
                 for b, soc in zip(self.batteries, soc_before, strict=True):
                     if b is not None:
                         b.soc_kwh = soc
                 raise
-        self.observations.record(self.day, inputs.t, self.house_ids, inputs.pv_kw, inputs.load_kw,
-                                 (inputs.price_import, inputs.price_export, inputs.price_p2p))
-        result = self._result(houses, inputs, dispatch, settled)
-        day = self.day
-        self._advance_clock(result)
-        if self.day != day:
-            # the new day's prices must be there right after midnight, not only after its first step
-            self._sync(houses)
+            # no await between the commit and the end of the step: memory moves on only together with the DB
+            self.observations.record(self.day, inputs.t, self.house_ids, inputs.pv_kw, inputs.load_kw,
+                                     (inputs.price_import, inputs.price_export, inputs.price_p2p))
+            result = self._result(houses, inputs, dispatch, settled)
+            day = self.day
+            self._advance_clock(result)
+            if self.day != day:
+                # the new day's prices must be there right after midnight, not only after its first step
+                self._sync(houses)
         return result
 
     def _step_inputs(self) -> StepInputs:

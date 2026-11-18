@@ -20,7 +20,7 @@ class ConsumptionChartCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Evoluție consum', style: statsCardTitle),
-          Text('Granularitate: ${chart.granularity}',
+          Text('Granularitate: $_granularityLabel',
               style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
           const SizedBox(height: 16),
           SizedBox(
@@ -84,6 +84,17 @@ class ConsumptionChartCard extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String get _granularityLabel {
+    switch (chart.granularity) {
+      case 'hourly':
+        return 'orară';
+      case 'weekly':
+        return 'săptămânală';
+      default:
+        return 'zilnică';
+    }
   }
 
   String _axisDate(DateTime date) => chart.granularity == 'hourly' ? formatClock(date) : formatDayMonth(date);

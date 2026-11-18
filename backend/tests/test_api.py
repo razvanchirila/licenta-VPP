@@ -4,8 +4,10 @@ The simulation loop is loaded but not started; steps are triggered by hand.
 """
 import asyncio
 import os
+from dataclasses import replace
 from datetime import datetime, timedelta
 
+import numpy as np
 import pytest
 from conftest import api_database_url, recreate_tables
 
@@ -23,10 +25,12 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from starlette.websockets import WebSocketDisconnect  # noqa: E402
 
-from app.db.database import close_db, get_session_context  # noqa: E402
+from app.db.database import close_db, get_engine, get_session_context  # noqa: E402
 from app.db.init_data import seed_houses  # noqa: E402
+from app.db.repositories import UserRepository  # noqa: E402
 from app.services import settlement  # noqa: E402
 from app.services.auth import create_access_token  # noqa: E402
+from app.services.rate_limit import login_failures, registrations  # noqa: E402
 from app.services.simulation_loop import sim  # noqa: E402
 from app.services.users import create_user  # noqa: E402
 from app.settings import settings  # noqa: E402
@@ -91,6 +95,28 @@ def test_root_redirects_to_docs(client):
 def test_login_rejects_bad_password(client):
     r = client.post("/api/auth/login", json={"username": "user1", "password": "gresit"})
     assert r.status_code == 401
+
+
+def test_login_locks_a_username_after_repeated_failures(client):
+    for _ in range(settings.login_max_failures):
+        r = client.post("/api/auth/login", json={"username": "user2", "password": "gresit"})
+        assert r.status_code == 401
+    r = client.post("/api/auth/login", json={"username": "user2", "password": PASSWORD})
+    assert r.status_code == 429 and "Retry-After" in r.headers
+    assert client.post("/api/auth/login", json={"username": "user1", "password": PASSWORD}).status_code == 200
+    login_failures.reset()
+    assert client.post("/api/auth/login", json={"username": "user2", "password": PASSWORD}).status_code == 200
+
+
+def test_register_is_rate_limited(client, monkeypatch):
+    registrations.reset()
+    monkeypatch.setattr(settings, "register_max_per_hour", 2)
+    for i in range(2):
+        r = client.post("/api/auth/register", json={"username": f"limita{i}", "password": PASSWORD})
+        assert r.status_code == 201
+    r = client.post("/api/auth/register", json={"username": "limita2", "password": PASSWORD})
+    assert r.status_code == 429
+    registrations.reset()
 
 
 def test_login_returns_house_and_role(client):
@@ -333,12 +359,13 @@ def test_config_switches_controller_to_mpc(client, admin, user1):
     assert client.post("/api/config/reset", headers=admin).json()["config"]["controller"] == "reguli"
 
 
-def test_prices_and_history(client, user1):
+def test_prices_and_history(client, user1, admin):
     prices = client.get("/api/sim/prices", headers=user1).json()
     assert len(prices["prices"]) == round(24 / sim.dt_h)
     assert prices["prices"][0]["price_import"] > prices["prices"][0]["price_p2p"]
-    history = client.get("/api/sim/history?limit=2", headers=user1).json()
+    history = client.get("/api/sim/history?limit=2", headers=admin).json()
     assert history["count"] == 2 and "community" in history["steps"][-1]
+    assert client.get("/api/sim/history", headers=user1).status_code == 403     # the steps hold every house
 
 
 def test_vpp_state_and_stats_aggregates(client, user1):
@@ -392,6 +419,15 @@ def test_stats_chart_groups_by_hour_day_and_week(client, user3):
     assert impact["monthly_savings"][-1]["has_data"] is True and impact["monthly_savings"][0]["has_data"] is False
 
 
+def test_stats_chart_range_is_limited(client, user3):
+    def chart(start):
+        return client.get(f"/api/stats/chart?start_date={start}&end_date=2025-06-01", headers=user3)
+
+    assert chart("2024-06-01").status_code == 200            # the "An" view of the app
+    r = chart("2024-04-01")
+    assert r.status_code == 400 and "400 de zile" in r.json()["detail"]
+
+
 def test_house_ids_continue_after_the_seeded_ones(client):
     async def next_house_id():
         engine = create_async_engine(settings.database_url)
@@ -414,6 +450,24 @@ def test_register_then_admin_assigns_house(client, admin):
     assert r.status_code == 200 and r.json()["house_id"] == 4
     assert client.get("/api/me/house", headers=token).json()["id"] == 4     # same token, house re-read from DB
     assert client.put(f"/api/admin/users/{user_id}", json={"house_id": 1}, headers=admin).status_code == 400
+
+
+def test_duplicates_that_pass_the_checks_are_still_a_400(client, admin, monkeypatch):
+    """Two requests at once both pass the lookups; the unique constraints stop the second one."""
+    users = client.get("/api/admin/users", headers=admin).json()
+    user2 = next(u["user_id"] for u in users if u["username"] == "user2")
+
+    async def nothing_found(self, *args):
+        return None
+
+    monkeypatch.setattr(UserRepository, "get_by_username", nothing_found)
+    monkeypatch.setattr(UserRepository, "is_house_assigned", nothing_found)
+    r = client.post("/api/auth/register", json={"username": "user1", "password": PASSWORD})
+    assert r.status_code == 400 and "exista deja" in r.json()["detail"]
+    r = client.put(f"/api/admin/users/{user2}", json={"house_id": 1}, headers=admin)
+    assert r.status_code == 400 and "deja asignata" in r.json()["detail"]
+    monkeypatch.undo()
+    assert client.get(f"/api/admin/users/{user2}", headers=admin).json()["house_id"] == 2
 
 
 # ---------------------------------------------------------------- security
@@ -439,22 +493,106 @@ def test_every_control_route_is_admin_only(client, user1):
     for path in posts:
         assert client.post(path, json={}, headers=user1).status_code == 403, path
     assert client.post("/api/sim/speed", json={"tick_seconds": 1}, headers=user1).status_code == 403
-    for path in ["/api/trading/preferences", "/api/trading/recent", "/api/wallet/operator", "/api/admin/users"]:
+    for path in ["/api/trading/preferences", "/api/trading/recent", "/api/wallet/operator", "/api/admin/users",
+                 "/api/sim/history"]:
         assert client.get(path, headers=user1).status_code == 403, path
     assert client.get("/api/stats/summary?house_id=2", headers=user1).status_code == 403
 
 
-def test_websocket_requires_a_valid_token(client, user1):
-    for url in ("/api/admin/ws", "/api/admin/ws?token=nu.e.token"):
+def test_websocket_requires_a_valid_admin_token(client, user1, admin):
+    user_token = user1["Authorization"].split()[1]
+    for url, reason in (("/api/admin/ws", "Token invalid sau lipsa"),
+                        ("/api/admin/ws?token=nu.e.token", "Token invalid sau lipsa"),
+                        (f"/api/admin/ws?token={user_token}", "Doar administratorul poate face asta")):
         with client.websocket_connect(url) as ws, pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
-        assert closed.value.code == 1008
-    token = user1["Authorization"].split()[1]
+        assert closed.value.code == 1008 and closed.value.reason == reason
+    token = admin["Authorization"].split()[1]
     with client.websocket_connect(f"/api/admin/ws?token={token}") as ws:
         hello = ws.receive_json()
         assert hello["type"] == "connected" and hello["status"]["n_houses"] == 10
+        assert get_engine().pool.checkedout() == 0       # an open socket holds no database connection
         ws.send_text("ping")
         assert ws.receive_text() == "pong"
+
+
+# ---------------------------------------------------------------- failed steps
+
+def _memory_state():
+    recorded = sum(int(np.isfinite(p).sum()) for p in sim.observations.prices.values())
+    return ([b.soc_kwh if b else None for b in sim.batteries], sim.day, sim.t, sim.total_steps, len(sim.history),
+            sim.last_result, recorded)
+
+
+@pytest.mark.parametrize("error", [RuntimeError, asyncio.CancelledError])
+def test_failed_or_cancelled_step_changes_nothing(client, user3, monkeypatch, error):
+    """The step fails at its last write, after the batteries were already charged or discharged in memory."""
+    soc_at_failure = []
+
+    async def broken_save(session, **fields):
+        soc_at_failure.append([b.soc_kwh if b else None for b in sim.batteries])
+        raise error("pas intrerupt")
+
+    async def step():
+        with pytest.raises(error):
+            await sim.step()
+
+    before = _memory_state()
+    soc_db = client.get("/api/houses/3/battery", headers=user3).json()["soc_kwh"]
+    steps_db = client.get("/api/me/energy/today", headers=user3).json()["steps"]
+    monkeypatch.setattr(sim, "_save_state", broken_save)
+    client.portal.call(step)
+    assert soc_at_failure[0] != before[0]
+    assert _memory_state() == before
+    assert client.get("/api/houses/3/battery", headers=user3).json()["soc_kwh"] == soc_db
+    assert client.get("/api/me/energy/today", headers=user3).json()["steps"] == steps_db
+
+
+def _run_loop(client, monkeypatch, step, done):
+    """The background loop with `step` instead of the real step, stopped as soon as done() holds."""
+    monkeypatch.setattr(sim, "_step", step)
+    monkeypatch.setattr(sim, "config", replace(sim.config, tick_seconds=0.2))
+
+    async def run():
+        await sim.start()
+        try:
+            for _ in range(2000):
+                if done():
+                    break
+                await asyncio.sleep(0.01)
+        finally:
+            await sim.stop()
+
+    client.portal.call(run)
+
+
+def test_loop_tries_again_after_a_failed_step(client, monkeypatch):
+    real_step, steps, errors = sim._step, sim.total_steps, []
+
+    async def fails_once():
+        errors.append(sim.last_error)
+        if len(errors) == 1:
+            raise RuntimeError("conexiune pierduta")
+        return await real_step()
+
+    _run_loop(client, monkeypatch, fails_once, lambda: sim.total_steps >= steps + 2)
+    assert sim.total_steps >= steps + 2 and not sim.paused
+    assert errors[:2] == [None, "conexiune pierduta"] and sim.last_error is None
+
+
+def test_loop_pauses_after_five_failed_steps_in_a_row(client, admin, monkeypatch):
+    calls = []
+
+    async def always_fails():
+        calls.append(sim.paused)
+        raise RuntimeError("baza de date oprita")
+
+    _run_loop(client, monkeypatch, always_fails, lambda: sim.paused)
+    assert calls == [False] * 5
+    status = client.get("/api/sim/status", headers=admin).json()
+    assert status["paused"] is True and status["last_error"] == "baza de date oprita"
+    status = client.post("/api/sim/resume", headers=admin).json()["status"]
+    assert status["paused"] is False and status["last_error"] is None
 
 
 def test_reset_restores_initial_state(client, admin, user3):

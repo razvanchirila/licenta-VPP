@@ -7,7 +7,6 @@ export interface PowerPoint {
   load: number
   import: number
   export: number
-  p2p: number
 }
 
 export function powerSeries(day: StepResult[]): PowerPoint[] {
@@ -17,7 +16,6 @@ export function powerSeries(day: StepResult[]): PowerPoint[] {
     load: s.community.load_kw,
     import: s.community.import_kw,
     export: s.community.export_kw,
-    p2p: s.community.p2p_kw,
   }))
 }
 

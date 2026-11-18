@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/formatters.dart';
 import 'package:flutter_interface/models/energy.dart';
 import 'package:flutter_interface/widgets/common/surface_card.dart';
 import 'package:flutter_interface/widgets/impact/impact_palette.dart';
@@ -42,7 +43,7 @@ class MonthlySavingsCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${totalSavings.toStringAsFixed(0)} RON',
+                      formatLei(totalSavings, decimals: 0),
                       style: GoogleFonts.inter(
                         color: totalSavings >= 0 ? ImpactPalette.battery : ImpactPalette.peak,
                         fontSize: 28,

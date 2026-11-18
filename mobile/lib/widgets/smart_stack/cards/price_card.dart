@@ -68,7 +68,7 @@ class PriceCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 2),
                         Text(
-                          'RON',
+                          'lei',
                           style: GoogleFonts.inter(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 12,

@@ -10,6 +10,10 @@ title VPP
 
 set "RESET="
 if exist .env for /f "usebackq eol=# tokens=1,* delims==" %%a in (".env") do set "%%a=%%b"
+REM docker compose cere JWT_SECRET_KEY; la prima pornire se genereaza unul si se pastreaza in .env
+if defined JWT_SECRET_KEY goto args
+for /f %%k in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [BitConverter]::ToString($b).Replace('-','').ToLower()"') do set "JWT_SECRET_KEY=%%k"
+(echo.& echo JWT_SECRET_KEY=%JWT_SECRET_KEY%)>>.env
 :args
 if "%~1"=="" goto check_docker
 if /i "%~1"=="--reset" (

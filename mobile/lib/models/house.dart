@@ -75,6 +75,9 @@ class HouseStep {
   final double? socPercent;
   final bool p2pEnabled;
 
+  /// Indoor temperature from the thermal model; null for a house simulated without it.
+  final double? tempInC;
+
   const HouseStep({
     required this.pvKw,
     required this.loadKw,
@@ -90,6 +93,7 @@ class HouseStep {
     required this.socKwh,
     required this.socPercent,
     required this.p2pEnabled,
+    required this.tempInC,
   });
 
   factory HouseStep.fromJson(Map<String, dynamic> j) => HouseStep(
@@ -107,6 +111,7 @@ class HouseStep {
         socKwh: asDouble(j['soc_kwh']),
         socPercent: asDoubleOrNull(j['soc_percent']),
         p2pEnabled: asBool(j['p2p_enabled']),
+        tempInC: asDoubleOrNull(j['temp_in_c']),
       );
 
   /// > 0 charging, < 0 discharging.

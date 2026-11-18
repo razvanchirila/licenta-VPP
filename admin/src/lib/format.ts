@@ -44,6 +44,16 @@ export function formatDate(isoDate: string | null | undefined): string {
   return match ? `${match[3]}.${match[2]}.${match[1]}` : DASH
 }
 
+export function minutesText(hours: number | null | undefined): string {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return DASH
+  const minutes = Math.round(hours * 60)
+  if (minutes === 1) return '1 minut'
+  // Romanian adds "de" from 20 up, except when the last two digits are 01–19
+  const tail = minutes % 100
+  const de = minutes >= 20 && (tail === 0 || tail >= 20)
+  return `${minutes} ${de ? 'de ' : ''}minute`
+}
+
 export function formatHour(hour: number): string {
   const h = Math.floor(hour) % 24
   const m = Math.round((hour - Math.floor(hour)) * 60)

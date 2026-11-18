@@ -91,3 +91,21 @@ class SimPrices {
   double avg(PriceSeries s) =>
       prices.isEmpty ? 0 : prices.map((p) => p.value(s)).reduce((a, b) => a + b) / prices.length;
 }
+
+/// The part of `/api/config` shown to the user; the operator can change all of it from the panel.
+class SimConfig {
+  final String controller;
+  final double? p2pPriceFactor;
+  final double? minP2pBalanceLei;
+
+  const SimConfig({required this.controller, required this.p2pPriceFactor, required this.minP2pBalanceLei});
+
+  factory SimConfig.fromJson(Map<String, dynamic> j) => SimConfig(
+        controller: asString(j['controller']),
+        p2pPriceFactor: asDoubleOrNull(j['p2p_price_factor']),
+        minP2pBalanceLei: asDoubleOrNull(j['min_p2p_balance_lei']),
+      );
+
+  /// Under MPC the optimiser dispatches the whole neighbourhood and ignores the Eco/Profit mode of a house.
+  bool get isMpc => controller == 'mpc';
+}
