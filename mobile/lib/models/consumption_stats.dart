@@ -31,7 +31,6 @@ class ConsumptionSummary {
   final double? changePercent;
   final String period;
   final double estimatedCost;
-  final String currency;
   final bool hasData;
 
   const ConsumptionSummary({
@@ -41,7 +40,6 @@ class ConsumptionSummary {
     this.changePercent,
     required this.period,
     required this.estimatedCost,
-    required this.currency,
     required this.hasData,
   });
 
@@ -52,7 +50,6 @@ class ConsumptionSummary {
         changePercent: asDoubleOrNull(json['change_percent']),
         period: asString(json['period']),
         estimatedCost: asDouble(json['estimated_cost']),
-        currency: asString(json['currency'], 'RON'),
         hasData: asBool(json['has_data'], true),
       );
 }

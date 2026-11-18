@@ -297,7 +297,7 @@ class _ModeButton extends StatelessWidget {
       case ClimateMode.cold:
         return 'RĂCIRE';
       case ClimateMode.fan:
-        return 'FAN';
+        return 'VENTIL.';
       case ClimateMode.dry:
         return 'USCAT';
       case ClimateMode.heat:

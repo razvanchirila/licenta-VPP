@@ -6,19 +6,34 @@ export interface LoginResponse {
   access_token: string
   token_type: 'bearer'
   expires_in: number
-  user_id: number
+  user_id: string
   username: string
   house_id: number | null
   is_admin: boolean
 }
 
-export interface Me {
-  user_id: number
+export interface User {
+  user_id: string
   username: string
   house_id: number | null
   house_name: string | null
   is_admin: boolean
-  created_at: string
+  created_at: string | null
+}
+
+export type Me = User
+
+export interface UserUpdate {
+  password?: string
+  house_id?: number
+  is_admin?: boolean
+}
+
+export interface NewUser {
+  username: string
+  password: string
+  house_id: number | null
+  is_admin: boolean
 }
 
 export interface SimStatus {
@@ -59,7 +74,7 @@ export interface CommunityStep {
   export_kw: number
   p2p_kw: number
   soc_kwh: number
-  soc_percent: number
+  soc_percent: number | null
 }
 
 export interface HouseStep {
@@ -167,7 +182,7 @@ export interface House {
   L_crit_kw: number
   L_noncrit_kw: number
   trading: TradingPrefs | null
-  wallet_balance_lei: number
+  wallet_balance_lei: number | null
   user: string | null
   last_step: HouseStep | null
 }

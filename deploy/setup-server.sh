@@ -96,6 +96,7 @@ new_env() {
         umask 077
         sed -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" \
             -e "s|^JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$(openssl rand -hex 32)|" \
+            -e "s|^DEMO_PASSWORD=.*|DEMO_PASSWORD=$(openssl rand -hex 12)|" \
             "$example" > "$env"
     )
     chown "$APP_USER:$APP_USER" "$env"

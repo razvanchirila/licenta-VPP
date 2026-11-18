@@ -25,12 +25,22 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
   String _selectedMode = 'Eco';
   bool _hasBattery = false;
   bool _isSaving = false;
+  bool _mpcActive = false;
   double? _reserveBeforeDrag;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadController();
+  }
+
+  /// Only the rule-based controller reads the Eco/Profit mode; without an answer no note is shown.
+  Future<void> _loadController() async {
+    try {
+      final config = await userApiService.getSimConfig();
+      if (mounted) setState(() => _mpcActive = config.isMpc);
+    } catch (_) {}
   }
 
   Future<void> _loadSettings() async {
@@ -56,10 +66,10 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
       if (!mounted) return;
       setState(() => _apply(settings));
       _showSnackBar('Mod salvat: ${settings.mode}');
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _selectedMode = previous);
-      _showSnackBar('Eroare la salvare: ${e.message}', isError: true);
+      _showSnackBar('Eroare la salvare: ${ApiException.from(e).message}', isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -72,10 +82,10 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
       if (!mounted) return;
       setState(() => _apply(settings));
       _showSnackBar('Rezervă backup salvată: ${_backupReserve.round()}%');
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _backupReserve = previous);
-      _showSnackBar('Eroare la salvare: ${e.message}', isError: true);
+      _showSnackBar('Eroare la salvare: ${ApiException.from(e).message}', isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -157,6 +167,10 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
             subtitle: 'Alege cum să fie folosită energia',
           ),
           const SizedBox(height: 16),
+          if (_mpcActive) ...[
+            const _MpcNote(),
+            const SizedBox(height: 12),
+          ],
           _modeCard(
             mode: 'Eco',
             title: 'Mod Eco',
@@ -200,6 +214,40 @@ class _SettingsScreenState extends State<SettingsScreen> with AsyncLoader<HouseS
       color: color,
       isSelected: isSelected,
       onTap: (!isSelected && !_isSaving) ? () => _saveMode(mode) : null,
+    );
+  }
+}
+
+class _MpcNote extends StatelessWidget {
+  const _MpcNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      identifier: 'settings-mode-note',
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.blue.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.blue.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline_rounded, color: AppColors.blue, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Acum simularea rulează cu optimizatorul MPC, care decide pentru tot cartierul. '
+                'Modul ales aici se aplică doar când operatorul trece pe controlul bazat pe reguli.',
+                style: GoogleFonts.inter(color: Colors.white70, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

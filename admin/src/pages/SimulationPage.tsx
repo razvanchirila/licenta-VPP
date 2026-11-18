@@ -6,7 +6,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Spinner } from '../components/Spinner'
 import { useLive } from '../hooks/useLive'
 import { useToast } from '../hooks/useToast'
-import { dataSourceText, formatDate, formatNumber } from '../lib/format'
+import { dataSourceText, formatDate, formatNumber, minutesText } from '../lib/format'
 import { simStateLabel } from '../lib/simState'
 import type { Controller, EditableConfig, SimConfig, SimStatus } from '../types/api'
 import styles from './SimulationPage.module.css'
@@ -97,16 +97,16 @@ function ConfigForm({ config, onSave, onReset, busy }: {
   onReset: () => void
   busy: boolean
 }) {
-  const [values, setValues] = useState<Record<NumericField, string>>(() => {
-    const entries = CONFIG_FIELDS.map((f) => [f.key, String(config[f.key])])
-    return Object.fromEntries(entries) as Record<NumericField, string>
-  })
+  // only the fields typed into are kept, so a config refetch (speed, controller) does not undo them
+  const [edits, setEdits] = useState<Partial<Record<NumericField, string>>>({})
+  const textOf = (key: NumericField) => edits[key] ?? String(config[key])
 
   const changes: Partial<EditableConfig> = {}
   let invalid = false
   for (const f of CONFIG_FIELDS) {
-    const v = Number(values[f.key])
-    if (values[f.key] === '' || !Number.isFinite(v)) invalid = true
+    const text = textOf(f.key)
+    const v = Number(text)
+    if (text === '' || !Number.isFinite(v)) invalid = true
     else if (v !== config[f.key]) changes[f.key] = v
   }
   const dirty = Object.keys(changes).length > 0
@@ -128,8 +128,8 @@ function ConfigForm({ config, onSave, onReset, busy }: {
               min={f.min}
               max={f.max}
               step={f.step}
-              value={values[f.key]}
-              onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+              value={textOf(f.key)}
+              onChange={(e) => setEdits((prev) => ({ ...prev, [f.key]: e.target.value }))}
             />
           </label>
         ))}
@@ -160,9 +160,14 @@ export function SimulationPage() {
   const queryClient = useQueryClient()
   const toast = useToast()
   const [confirmReset, setConfirmReset] = useState(false)
+  const [formVersion, setFormVersion] = useState(0)
   const config = useQuery({ queryKey: ['config'], queryFn: api.config })
 
-  const refreshStatus = () => api.status().then((s) => dispatch({ type: 'status', status: s }))
+  // a refresh that fails is not a failure of the action itself; the status is polled anyway
+  const refreshStatus = () => {
+    api.status().then((s) => dispatch({ type: 'status', status: s }), () => {})
+  }
+  const clearForm = () => setFormVersion((v) => v + 1)
   const onError = (e: Error) => toast(e.message, 'error')
 
   const action = useMutation({
@@ -180,10 +185,10 @@ export function SimulationPage() {
 
   const step = useMutation({
     mutationFn: api.step,
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       dispatch({ type: 'step', step: result })
-      await refreshStatus()
       toast('Un pas simulat', 'ok')
+      refreshStatus()
     },
     onError,
   })
@@ -191,14 +196,14 @@ export function SimulationPage() {
   const afterConfig = (res: { message: string; config: SimConfig }) => {
     queryClient.setQueryData(['config'], res.config)
     toast(res.message, 'ok')
-    void refreshStatus()
+    refreshStatus()
   }
   const speed = useMutation({
     mutationFn: api.speed,
     onSuccess: (res) => {
       toast(res.message, 'ok')
       void queryClient.invalidateQueries({ queryKey: ['config'] })
-      void refreshStatus()
+      refreshStatus()
     },
     onError,
   })
@@ -243,7 +248,10 @@ export function SimulationPage() {
       </Card>
 
       <div className={styles.row}>
-        <Card title="Viteză" subtitle="Cât durează în realitate un pas de 15 minute simulate">
+        <Card
+          title="Viteză"
+          subtitle={`Cât durează în realitate un pas simulat${status ? ` de ${minutesText(status.dt_hours)}` : ''}`}
+        >
           {status ? (
             <SpeedControl
               key={status.tick_seconds}
@@ -280,11 +288,11 @@ export function SimulationPage() {
       <Card title="Configurație" subtitle="Limitele rețelei și ale schimbului P2P">
         {config.data ? (
           <ConfigForm
-            key={JSON.stringify(config.data)}
+            key={formVersion}
             config={config.data}
             busy={save.isPending || reset.isPending}
-            onSave={(changes) => save.mutate(changes)}
-            onReset={() => reset.mutate()}
+            onSave={(changes) => save.mutate(changes, { onSuccess: clearForm })}
+            onReset={() => reset.mutate(undefined, { onSuccess: clearForm })}
           />
         ) : config.isError ? (
           <p className="muted">{config.error.message}</p>

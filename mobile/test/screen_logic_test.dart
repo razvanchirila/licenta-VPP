@@ -3,10 +3,12 @@ import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/models/consumption_stats.dart';
 import 'package:flutter_interface/models/energy.dart';
 import 'package:flutter_interface/models/trading.dart';
+import 'package:flutter_interface/screens/login_screen.dart';
 import 'package:flutter_interface/widgets/impact/monthly_savings_card.dart';
 import 'package:flutter_interface/widgets/solar_forecast/forecast_labels.dart';
 import 'package:flutter_interface/widgets/statistics/statistics_data.dart';
 import 'package:flutter_interface/widgets/trading/trading_data.dart';
+import 'package:flutter_interface/widgets/trading/trading_settings_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -75,6 +77,53 @@ void main() {
       expect(ForecastLabels.timeSinceUpdate(now.subtract(const Duration(hours: 3)), now), 'Actualizat acum 3 ore');
       expect(ForecastLabels.timeSinceUpdate(now.subtract(const Duration(days: 2)), now), 'Actualizat acum 2 zile');
       expect(ForecastLabels.peakHoursText([9, 12]), '09:00, 12:00');
+    });
+  });
+
+  group('register validation follows the backend rules', () {
+    test('username: 3-50 characters from letters, digits and . _ -', () {
+      expect(validateUsername('ion.popescu_2', register: true), isNull);
+      expect(validateUsername('  ana  ', register: true), isNull, reason: 'the name is trimmed before it is sent');
+      expect(validateUsername('', register: true), 'Introdu numele de utilizator');
+      expect(validateUsername('ab', register: true), 'Minim 3 caractere');
+      expect(validateUsername('a' * 51, register: true), 'Maxim 50 de caractere');
+      for (final name in ['ion popescu', 'ștefan', 'ana@casa', 'a/b/c']) {
+        expect(validateUsername(name, register: true), contains('fără diacritice'), reason: name);
+      }
+    });
+
+    test('password: at least 6 characters, at most 72 bytes', () {
+      expect(validatePassword('parola1', register: true), isNull);
+      expect(validatePassword('', register: true), 'Introdu parola');
+      expect(validatePassword('abc12', register: true), contains('cel puțin 6'));
+      expect(validatePassword('a' * 72, register: true), isNull);
+      expect(validatePassword('a' * 73, register: true), contains('prea lungă'));
+      expect(validatePassword('ș' * 40, register: true), contains('prea lungă'), reason: '40 letters are 80 bytes');
+    });
+
+    test('login only asks for both fields', () {
+      expect(validateUsername('ion popescu', register: false), isNull);
+      expect(validatePassword('abc', register: false), isNull);
+      expect(validateUsername(' ', register: false), 'Introdu numele de utilizator');
+      expect(validatePassword(null, register: false), 'Introdu parola');
+    });
+  });
+
+  group('fixed P2P price', () {
+    test('accepts 0 - 10 lei/kWh with dot or comma', () {
+      expect(fixedPriceError('0.80'), isNull);
+      expect(fixedPriceError('0,8'), isNull);
+      expect(fixedPriceError('10'), isNull);
+      expect(fixedPriceError('0'), isNull);
+      expect(parseFixedPrice(' 0,95 '), 0.95);
+    });
+
+    test('refuses an empty, unreadable or too large price', () {
+      expect(fixedPriceError(''), 'Introdu un preț');
+      expect(fixedPriceError(','), 'Prețul nu este un număr valid');
+      expect(fixedPriceError('1.2.3'), 'Prețul nu este un număr valid');
+      expect(fixedPriceError('-1'), 'Prețul nu este un număr valid');
+      expect(fixedPriceError('10,01'), 'Prețul poate fi cel mult 10 lei/kWh');
     });
   });
 

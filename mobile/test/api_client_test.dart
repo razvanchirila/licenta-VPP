@@ -121,6 +121,57 @@ void main() {
     );
   });
 
+  test('422 validation errors are turned into Romanian messages', () async {
+    Map<String, dynamic> error(String type, String field, String msg, [Map<String, dynamic>? ctx]) => {
+          'type': type,
+          'loc': ['body', field],
+          'msg': msg,
+          'input': 'x',
+          if (ctx != null) 'ctx': ctx,
+        };
+    final cases = <List<Map<String, dynamic>>, String>{
+      [
+        error('string_pattern_mismatch', 'username', "String should match pattern '^[A-Za-z0-9_.-]+\$'"),
+      ]: 'Numele de utilizator conține caractere nepermise',
+      [
+        error('string_too_short', 'password', 'String should have at least 3 characters', {'min_length': 3}),
+      ]: 'Parola trebuie să aibă cel puțin 3 caractere',
+      [
+        error('less_than_equal', 'fixed_price_lei_kwh', 'Input should be less than or equal to 10', {'le': 10.0}),
+      ]: 'Prețul fix poate fi cel mult 10',
+      [
+        error('greater_than', 'power_w', 'Input should be greater than 0', {'gt': 0.0}),
+        error('missing', 'name', 'Field required'),
+      ]: 'Puterea trebuie să fie peste 0; Numele lipsește',
+      [
+        error('value_error', 'password', 'Value error, parola nu poate depasi 72 de octeti'),
+      ]: 'Parola: parola nu poate depasi 72 de octeti',
+      [
+        error('float_parsing', 'tick_seconds', 'Input should be a valid number'),
+      ]: 'Câmpul tick_seconds are o valoare nevalidă',
+    };
+
+    for (final entry in cases.entries) {
+      final client = clientWith((req) async => http.Response(json.encode({'detail': entry.key}), 422));
+      await expectLater(
+        client.post('/x', body: {}),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 422)
+            .having((e) => e.message, 'message', entry.value)),
+      );
+    }
+  });
+
+  test('an error that is not an ApiException still gets a message for the screen', () {
+    final wrapped = ApiException.from(StateError('cast'));
+    expect(wrapped.statusCode, ApiException.unexpected);
+    expect(wrapped.isNetworkError, isFalse);
+    expect(wrapped.message, 'A apărut o eroare neașteptată');
+
+    const original = ApiException(403, 'Acces interzis');
+    expect(ApiException.from(original), same(original));
+  });
+
   test('network failure becomes ApiException with status 0', () async {
     final client = clientWith((req) async => throw http.ClientException('refused'));
 
@@ -154,5 +205,40 @@ void main() {
     expect(auth.token, 'new-token');
     expect(auth.houseId, 7);
     expect(auth.username, 'user7');
+  });
+
+  test('refreshSession picks up a house assigned after login', () async {
+    await auth.setSession(token: 'tok', houseId: null, username: 'nou', isAdmin: false);
+    var notified = 0;
+    auth.addListener(() => notified++);
+    final api = UserApiService(clientWith((req) async {
+      expect(req.url.path, endsWith('/auth/me'));
+      return http.Response(json.encode({'user_id': 9, 'username': 'nou', 'house_id': 4, 'is_admin': false}), 200);
+    }));
+
+    await api.refreshSession();
+
+    expect(auth.houseId, 4);
+    expect(auth.token, 'tok');
+    expect(notified, 1);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('house_id'), 4);
+
+    await api.refreshSession();
+    expect(notified, 1, reason: 'nothing changed, nobody is notified');
+  });
+
+  test('refreshSession follows the admin flag and a removed house', () async {
+    final api = UserApiService(clientWith(
+      (req) async => http.Response(json.encode({'username': 'user3', 'house_id': null, 'is_admin': true}), 200),
+    ));
+
+    await api.refreshSession();
+
+    expect(auth.houseId, isNull);
+    expect(auth.isAdmin, isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('house_id'), isNull);
+    expect(prefs.getBool('is_admin'), isTrue);
   });
 }

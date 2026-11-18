@@ -14,6 +14,12 @@ EdgeInsets browserSafeArea() {
 
 bool isBrowserStandalone() => impl.isStandalone();
 
+/// The operator panel is served next to the web build; other builds have no such address.
+String? operatorPanelUrl() => kIsWeb ? '${Uri.base.origin}/admin/' : null;
+
+/// False when the page could not be opened (pop-up blocked, or not a web build).
+bool openBrowserPage(String url) => impl.openPage(url);
+
 /// Phone: full screen with the real status bar. Desktop: the fake iOS status bar demo frame.
 bool usePhoneLayout({required TargetPlatform platform, required double width, required bool standalone}) =>
     platform == TargetPlatform.iOS || platform == TargetPlatform.android || standalone || width < phoneLayoutMaxWidth;

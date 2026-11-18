@@ -49,12 +49,13 @@ class _TradingScreenState extends State<TradingScreen>
   }
 
   Future<void> _loadTradingData() => load(() async {
-        final results = await Future.wait<Object>([
+        final results = await Future.wait<Object?>([
           userApiService.getTradingPreferences(),
           userApiService.getWallet(),
           userApiService.getTradingStats(),
           userApiService.getTradingHistory(limit: 30),
           userApiService.getWalletTransactions(limit: 30),
+          _fetchConfigOrNull(),
         ]);
         return TradingData(
           prefs: results[0] as TradingPrefs,
@@ -62,8 +63,17 @@ class _TradingScreenState extends State<TradingScreen>
           stats: results[2] as TradingStats,
           history: results[3] as List<Trade>,
           walletTransactions: results[4] as List<WalletTx>,
+          config: results[5] as SimConfig?,
         );
       });
+
+  Future<SimConfig?> _fetchConfigOrNull() async {
+    try {
+      return await userApiService.getSimConfig();
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> _loadPrices() async {
     setState(() {
@@ -77,10 +87,10 @@ class _TradingScreenState extends State<TradingScreen>
         _prices = prices;
         _isPriceLoading = false;
       });
-    } on ApiException catch (e) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
-        _priceError = e.message;
+        _priceError = ApiException.from(e).message;
         _isPriceLoading = false;
       });
     }
@@ -159,7 +169,7 @@ class _TradingScreenState extends State<TradingScreen>
                   onTransfer: () => _transferToVpp(data.wallet),
                 ),
                 HistoryTab(trades: data.history, onRefresh: _loadTradingData),
-                TradingSettingsTab(prefs: data.prefs, onMessage: _showSnackBar),
+                TradingSettingsTab(prefs: data.prefs, config: data.config, onMessage: _showSnackBar),
               ],
             ),
           )),

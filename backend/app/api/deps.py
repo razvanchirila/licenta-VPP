@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_session
+from app.db.database import get_session, get_session_context
 from app.db.models import HouseModel, UserModel
 from app.db.repositories import HouseRepository, UserRepository
 from app.services.auth import decode_token
@@ -30,10 +30,11 @@ async def get_current_user(
     return user
 
 
-async def get_ws_user(token: str | None = Query(default=None),
-                      session: AsyncSession = Depends(get_session)) -> UserModel | None:
+async def get_ws_user(token: str | None = Query(default=None)) -> UserModel | None:
     """WebSocket clients cannot set headers, so the token comes as ?token=...; None when it is missing or invalid."""
-    return await _user_from_token(token, session)
+    # not Depends(get_session): that session would stay open, with its pool connection, until the socket closes
+    async with get_session_context() as session:
+        return await _user_from_token(token, session)
 
 
 def require_admin(user: UserModel = Depends(get_current_user)) -> UserModel:

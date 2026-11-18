@@ -7,9 +7,12 @@ class AppState extends ChangeNotifier {
   factory AppState() => _instance;
   AppState._internal();
 
-  double _indoorTemperature = 22.0;
-  double get indoorTemperature => _indoorTemperature;
-  set indoorTemperature(double value) {
+  // Indoor temperature of the last simulated step; null until the house is loaded or without a thermal model.
+  double? _indoorTemperature;
+  double? get indoorTemperature => _indoorTemperature;
+
+  void setIndoorTemperature(double? value) {
+    if (_indoorTemperature == value) return;
     _indoorTemperature = value;
     notifyListeners();
   }
@@ -43,7 +46,6 @@ class AppState extends ChangeNotifier {
 
   void updateClimateSettings(ClimateSettings settings) {
     _climateSettings = settings;
-    _indoorTemperature = settings.targetTemperature;
     notifyListeners();
   }
 

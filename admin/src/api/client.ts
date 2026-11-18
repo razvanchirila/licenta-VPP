@@ -50,8 +50,8 @@ async function readJson(res: Response): Promise<unknown> {
   }
 }
 
-export async function request<T>(path: string, { method = 'GET', body, auth = true }: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+async function send(path: string, { method = 'GET', body, auth = true }: RequestOptions, accept: string): Promise<Response> {
+  const headers: Record<string, string> = { Accept: accept }
   const token = auth ? loadToken() : null
   // after a logout, queries still mounted may refetch once more: without a token there is nothing to ask
   if (auth && !token) throw new ApiError(401, 'Neautentificat')
@@ -65,35 +65,22 @@ export async function request<T>(path: string, { method = 'GET', body, auth = tr
     throw new ApiError(0, 'Serverul nu răspunde')
   }
 
-  const data = await readJson(res)
   if (res.status === 401 && auth) {
     clearToken()
     onUnauthorized()
     throw new ApiError(401, 'Sesiunea a expirat, autentifică-te din nou.')
   }
-  if (!res.ok) throw new ApiError(res.status, errorMessage(data, res.status))
-  return data as T
+  if (!res.ok) throw new ApiError(res.status, errorMessage(await readJson(res), res.status))
+  return res
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await send(path, options, 'application/json')
+  return (await readJson(res)) as T
 }
 
 /** A text download (e.g. CSV) with the session token; errors as in request(). */
 export async function requestText(path: string): Promise<string> {
-  const token = loadToken()
-  if (!token) throw new ApiError(401, 'Neautentificat')
-  let res: Response
-  try {
-    res = await fetch(path, { headers: { Authorization: `Bearer ${token}` } })
-  } catch {
-    throw new ApiError(0, 'Serverul nu răspunde')
-  }
-  const text = await res.text()
-  if (!res.ok) {
-    let body: unknown
-    try {
-      body = JSON.parse(text)
-    } catch {
-      body = null
-    }
-    throw new ApiError(res.status, errorMessage(body, res.status))
-  }
-  return text
+  const res = await send(path, {}, 'text/csv, text/plain')
+  return res.text()
 }

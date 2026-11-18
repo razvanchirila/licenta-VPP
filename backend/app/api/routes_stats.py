@@ -12,6 +12,9 @@ from app.services.simulation_loop import sim
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
+# the longest view of the app, "An", starts on the 1st of the same month one year back: at most 366 + 30 days
+MAX_CHART_DAYS = 400
+
 
 def stats_house_id(house_id: int | None = Query(None, ge=1), user: UserModel = Depends(get_current_user)) -> int:
     """Own house by default; admins may ask for any house with ?house_id=."""
@@ -57,6 +60,8 @@ async def chart(start_date: str = Query(..., description="YYYY-MM-DD"),
         raise HTTPException(400, "Datele trebuie sa fie YYYY-MM-DD") from None
     if end < start:
         raise HTTPException(400, "end_date trebuie sa fie dupa start_date")
+    if (end - start).days > MAX_CHART_DAYS:
+        raise HTTPException(400, f"Intervalul poate avea cel mult {MAX_CHART_DAYS} de zile")
     granularity, points = await _analytics(session).chart_data(house_id, start, end)
     return {"granularity": granularity, "start_date": start_date, "end_date": end_date,
             "data_points": [{"timestamp": p.timestamp.isoformat(), "value_kwh": p.value_kwh} for p in points]}

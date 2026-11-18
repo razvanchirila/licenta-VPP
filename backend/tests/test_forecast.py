@@ -225,6 +225,20 @@ def test_realise_enforces_the_community_limits():
     assert negative.exp.sum() == pytest.approx(0.0)
 
 
+def test_realise_over_the_import_limit_neighbours_discharge_before_a_house_sheds():
+    houses = (HouseParams(id=1, pv_kwp=0.0), *(HouseParams(id=i, pv_kwp=0.0, battery=deye_se_f16(1)) for i in (2, 3)))
+    community = CommunityParams(houses=houses, grid=GridParams(import_max_kw=3.0, export_max_kw=5.0))
+    state = SimState(t=0, batteries=[None, *(Battery(h.battery, h.initial_soc_kwh) for h in houses[1:])])
+    load = np.array([4.0, 1.0, 1.0])
+    night = realise(Dispatch.zeros(3), community, np.zeros(3), load, 0.5, state, 0.25)
+    assert night.shed.sum() == pytest.approx(0.0) and night.imp.sum() == pytest.approx(3.0)
+    assert night.dis.sum() == pytest.approx(3.0) and night.p2p_in[0] > 0
+    scenario = make_scenario("iarna", 0, 1, 0.25, False, community)
+    validate(night, community, replace(scenario, pv_kw=np.zeros((3, scenario.n_steps)),
+                                       load_crit_kw=np.tile(load[:, None], scenario.n_steps),
+                                       load_flex_kw=np.zeros((3, scenario.n_steps))), 0)
+
+
 # ---------------------------------------------------------------- the realistic MPC on the simulator
 
 def _total_cost(res, deg_cost: float, worst_price: float, voll: float = 10.0) -> float:

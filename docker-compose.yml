@@ -29,9 +29,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vpp}:${POSTGRES_PASSWORD:-vpp}@db:5432/${POSTGRES_DB:-vpp}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-schimba-in-productie-9f3c1a7e2b8d4c6f}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env (start.bat generates one)}
       JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:13000}
       SIM_CONTROLLER: ${SIM_CONTROLLER:-reguli}
       SIM_TICK_SECONDS: ${SIM_TICK_SECONDS:-2}
       SIM_STEP_MINUTES: ${SIM_STEP_MINUTES:-5}

@@ -14,6 +14,9 @@ class HouseSection extends StatefulWidget {
 
   /// Puterea grid (kW): pozitiv = import, negativ = export
   final double gridPower;
+
+  /// Schimbul cu vecinii (kW): pozitiv = cumpărare, negativ = vânzare; null = casa nu participă la P2P
+  final double? neighbourPower;
   final double solarPower;
   final double homePower;
 
@@ -23,6 +26,7 @@ class HouseSection extends StatefulWidget {
     this.batteryPower = 4.1,
     this.powerwallPercentage = 98,
     this.gridPower = 0.0,
+    this.neighbourPower,
     this.solarPower = 3.1,
     this.homePower = 3.0,
   });
@@ -47,6 +51,9 @@ class _HouseSectionState extends State<HouseSection> with SingleTickerProviderSt
   static const Offset batteryTopPx = Offset(624, 564);
   static const Offset batteryBottomPx = Offset(628, 705);
   static const Offset batteryLinePx = Offset(682, 699);
+
+  // Locul liber din stânga-jos, la aceeași înălțime cu rețeaua
+  static const Offset neighbourLabelPx = Offset(150, 687);
 
   @override
   void initState() {
@@ -135,6 +142,8 @@ class _HouseSectionState extends State<HouseSection> with SingleTickerProviderSt
         final batteryTop = _convertPoint(batteryTopPx, imageSize, imageOffset);
         final batteryBottom = _convertPoint(batteryBottomPx, imageSize, imageOffset);
         final batteryLineStart = _convertPoint(batteryLinePx, imageSize, imageOffset);
+        final neighbourLabel = _convertPoint(neighbourLabelPx, imageSize, imageOffset);
+        final neighbourPower = widget.neighbourPower;
 
         final topLabelsY = availableHeight * 0.12;
 
@@ -240,7 +249,7 @@ class _HouseSectionState extends State<HouseSection> with SingleTickerProviderSt
                 top: topLabelsY,
                 child: TopIndicator(
                   value: widget.homePower,
-                  label: 'HOME',
+                  label: 'CONSUM',
                   valueColor: Colors.white,
                   semanticsId: 'home-load',
                 ),
@@ -258,10 +267,19 @@ class _HouseSectionState extends State<HouseSection> with SingleTickerProviderSt
                 top: gridLabelY,
                 child: BottomIndicator(
                   value: widget.gridPower,
-                  label: 'GRID',
+                  label: 'REȚEA',
                   semanticsId: 'home-grid',
                 ),
               ),
+              if (neighbourPower != null)
+                Positioned(
+                  left: neighbourLabel.dx,
+                  top: gridLabelY,
+                  child: FractionalTranslation(
+                    translation: const Offset(-0.5, 0),
+                    child: NeighbourIndicator(value: neighbourPower),
+                  ),
+                ),
             ],
           ),
         );

@@ -51,11 +51,17 @@ void main() {
 
         final cards = tester.getRect(find.byType(SmartStack));
         expect(cards.bottom, lessThanOrEqualTo(menu.top));
-        for (final caption in ['BATERIE', 'REȚEA', '68%']) {
+        for (final caption in ['BATERIE', 'REȚEA', 'VECINI', '68%']) {
           final label = tester.getRect(find.text(caption));
           expect(label.bottom, lessThanOrEqualTo(cards.top), reason: '$caption overlaps the card row');
           expect(label.top, greaterThanOrEqualTo(phone.topInset));
         }
+
+        // 'CĂTRE VECINI' is about 25 px wider on each side than the idle label measured here
+        final neighbours = tester.getRect(find.text('VECINI'));
+        expect(neighbours.left, greaterThanOrEqualTo(25), reason: 'neighbours label leaves the screen');
+        expect(neighbours.right + 25, lessThan(tester.getRect(find.bySemanticsIdentifier('home-battery')).left),
+            reason: 'neighbours label runs into the battery label');
 
         final greeting = tester.getRect(find.textContaining('user3'));
         expect(greeting.top, greaterThanOrEqualTo(phone.topInset > 0 ? phone.topInset + 20 : 0),

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_interface/core/constants.dart';
 import 'package:flutter_interface/core/theme.dart';
 import 'package:flutter_interface/services/solar_forecast_service.dart';
+import 'package:flutter_interface/widgets/common/screen_header.dart';
 import 'package:flutter_interface/widgets/solar_forecast/forecast_cards.dart';
 import 'package:flutter_interface/widgets/solar_forecast/forecast_day_selector.dart';
 import 'package:flutter_interface/widgets/solar_forecast/forecast_labels.dart';
@@ -50,7 +51,7 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Actualizare date', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
         content: Text(
-          'API-ul are o limită de 12 request-uri/oră. Sigur vrei să actualizezi?',
+          'Serviciul de prognoză acceptă cel mult 12 cereri pe oră. Sigur vrei să actualizezi?',
           style: GoogleFonts.inter(color: Colors.white70),
         ),
         actions: [
@@ -77,10 +78,7 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.deepBackground,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: const BackNavButton(icon: Icons.arrow_back_ios_new_rounded),
         title: Column(
           children: [
             Text(
@@ -98,6 +96,7 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: Colors.white70),
+            tooltip: 'Actualizează prognoza',
             onPressed: _showRefreshWarning,
           ),
         ],
@@ -139,13 +138,13 @@ class _SolarForecastScreenState extends State<SolarForecastScreen> {
             const ForecastBanner(
               icon: Icons.warning_rounded,
               color: AppColors.red,
-              text: 'Limită API depășită. Se afișează date din cache.',
+              text: 'Limita de cereri a fost depășită. Se afișează ultimele date salvate.',
             ),
           if (result?.networkError == true)
             const ForecastBanner(
               icon: Icons.wifi_off_rounded,
               color: AppColors.amber,
-              text: 'Fără conexiune. Se afișează date din cache.',
+              text: 'Fără conexiune. Se afișează ultimele date salvate.',
             ),
           ForecastDaySelector(dates: data.availableDates, selected: selected, onSelected: _selectDate),
           const SizedBox(height: 20),

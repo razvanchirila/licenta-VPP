@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { ApiError } from '../api/client'
 import { api } from '../api/endpoints'
 import { useLive } from '../hooks/useLive'
 import { useToast } from '../hooks/useToast'
@@ -143,12 +144,16 @@ export function HouseDrawer() {
   const { last } = useLive()
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  const house = useQuery({ queryKey: ['house', id], queryFn: () => api.house(id), enabled: Number.isInteger(id) })
-  const wallet = useQuery({ queryKey: ['wallet', id], queryFn: () => api.wallet(id), enabled: Number.isInteger(id) })
+  const validId = Number.isInteger(id) && id > 0
+  const house = useQuery({ queryKey: ['house', id], queryFn: () => api.house(id), enabled: validId })
+  const wallet = useQuery({ queryKey: ['wallet', id], queryFn: () => api.wallet(id), enabled: validId })
+  const missing = !validId || (house.error instanceof ApiError && house.error.status === 404)
 
   const stepNumber = last?.step
   useEffect(() => {
-    if (stepNumber !== undefined) void queryClient.invalidateQueries({ queryKey: ['house', id] })
+    if (stepNumber === undefined) return
+    void queryClient.invalidateQueries({ queryKey: ['house', id] })
+    void queryClient.invalidateQueries({ queryKey: ['wallet', id] })
   }, [stepNumber, id, queryClient])
 
   const close = () => navigate('/case')
@@ -194,7 +199,7 @@ export function HouseDrawer() {
       >
         <header className={styles.head}>
           <div>
-            <h2>{data?.name ?? `Casa ${houseId}`}</h2>
+            <h2>{data?.name ?? (validId ? `Casa ${id}` : 'Casa')}</h2>
             <p className="muted">
               {data
                 ? `${data.user ? `utilizator ${data.user}` : 'fără utilizator'} · PV ${formatNumber(data.pv_capacity_kw, 0)} kW`
@@ -206,10 +211,17 @@ export function HouseDrawer() {
           </button>
         </header>
 
-        {house.isPending ? (
+        {missing ? (
+          <div className={styles.missing}>
+            <p>Casa nu există.</p>
+            <button type="button" className="btn" onClick={close}>
+              Înapoi la case
+            </button>
+          </div>
+        ) : house.isPending ? (
           <Spinner label="Se încarcă…" />
         ) : house.isError || !data ? (
-          <p className="muted">{house.error?.message ?? 'Casa nu există.'}</p>
+          <p className={styles.missing}>{house.error?.message ?? 'Casa nu a putut fi încărcată.'}</p>
         ) : (
           <div className={styles.body}>
             <section>

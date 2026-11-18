@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/energy_flow.dart';
 import 'package:flutter_interface/core/theme.dart';
 
 /// Autonomy = energy above the backup reserve / current load.
@@ -20,28 +21,21 @@ class BatteryAutonomyCard extends StatelessWidget {
   });
 
   String _calculateRuntime() {
-    if (availableKwh <= 0) return '0m';
+    if (availableKwh <= 0) return '0 min';
     if (currentConsumptionKw <= 0.001) return '∞';
 
     final hours = availableKwh / currentConsumptionKw;
     if (hours >= 24) {
-      return '${(hours / 24).toStringAsFixed(1)}d';
+      return '${(hours / 24).toStringAsFixed(1)} zile';
     } else if (hours >= 1) {
-      return '${hours.toStringAsFixed(1)}h';
+      return '${hours.toStringAsFixed(1)} h';
     }
-    return '${(hours * 60).toStringAsFixed(0)}m';
-  }
-
-  Color _getBatteryColor() {
-    if (!hasBattery) return AppColors.slate;
-    if (batteryPercent >= 60) return AppColors.green;
-    if (batteryPercent >= 30) return AppColors.amber;
-    return AppColors.red;
+    return '${(hours * 60).toStringAsFixed(0)} min';
   }
 
   @override
   Widget build(BuildContext context) {
-    final batteryColor = _getBatteryColor();
+    final batteryColor = hasBattery ? batteryLevelColor(batteryPercent) : AppColors.slate;
 
     return GestureDetector(
       onTap: onTap,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_interface/core/energy_flow.dart';
 import 'package:flutter_interface/models/house.dart';
 import 'package:flutter_interface/core/theme.dart';
 
@@ -17,16 +18,10 @@ class BatteryDetailsPopup extends StatelessWidget {
     );
   }
 
-  Color _socColor(double percent) {
-    if (percent >= 60) return AppColors.green;
-    if (percent >= 30) return AppColors.amber;
-    return AppColors.red;
-  }
-
   @override
   Widget build(BuildContext context) {
     final b = battery;
-    final color = _socColor(b.socPercent);
+    final color = batteryLevelColor(b.socPercent);
     final reservePercent = b.capacityKwh > 0 ? 100 * b.socMinKwh / b.capacityKwh : 0.0;
 
     return ClipRRect(

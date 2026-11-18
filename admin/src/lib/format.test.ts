@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatHour, formatNumber, formatPercent, formatSigned, hourOf, scheduleText, timeOf } from './format'
+import { formatHour, formatNumber, formatPercent, formatSigned, hourOf, minutesText, scheduleText, timeOf } from './format'
 
 describe('format', () => {
   it('uses the Romanian decimal comma and a dash for missing values', () => {
@@ -11,6 +11,15 @@ describe('format', () => {
   it('never shows a negative zero', () => {
     expect(formatNumber(-0.001, 2)).toBe('0,00')
     expect(formatSigned(-0.001, 2)).toBe('0,00')
+  })
+
+  it('writes the step length in minutes, with "de" from 20 up', () => {
+    expect(minutesText(5 / 60)).toBe('5 minute')
+    expect(minutesText(0.25)).toBe('15 minute')
+    expect(minutesText(0.5)).toBe('30 de minute')
+    expect(minutesText(1)).toBe('60 de minute')
+    expect(minutesText(1 / 60)).toBe('1 minut')
+    expect(minutesText(undefined)).toBe('–')
   })
 
   it('adds a plus sign only to positive values', () => {
