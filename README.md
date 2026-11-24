@@ -130,4 +130,4 @@ scripts/   Windows helper scripts (install, experiments, evaluation)
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+Copyright (c) 2026 Chirilă Răzvan. All rights reserved. The source is public for viewing and evaluation only; no reuse without written permission. See [LICENSE](LICENSE).
